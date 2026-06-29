@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, flash, jsonify
+from flask import Flask, render_template, request, redirect, flash, jsonify, session
 from database.models import db, Fornitore, Articolo, VarianteArticolo, Vendita, DettaglioVendita, Scadenza
 from datetime import datetime, date
 from sqlalchemy import func
@@ -15,6 +15,43 @@ db.init_app(app)
 
 with app.app_context():
     db.create_all()
+
+# 🛡️ SCUDO DI PROTEZIONE: CONTROLLO LOGIN AUTOMATICO SU OGNI PAGINA
+@app.before_request
+def blinda_pagine():
+    # Elenco delle rotte libere che non richiedono di essere loggati
+    rotte_libere = ['login', 'static']
+    
+    # Se l'utente sta andando sul login o sui file CSS/JS, lascialo passare
+    if request.endpoint in rotte_libere or request.path.startswith('/static/'):
+        return
+        
+    # Se nella sessione del browser non c'è il pass di login, rimbalzalo al modulo d'accesso
+    if not session.get('loggato'):
+        return redirect('/login')
+
+# 🔓 ROTTA DI LOGIN (VERIFICA CREDENZIALI STATICHE)
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password'].strip()
+        
+        # Controllo statico richiesto
+        if username == 'admin' and password == 'Loredanalo':
+            session['loggato'] = True
+            return redirect('/')
+        else:
+            flash('❌ Nome utente o Password errati!', 'danger')
+            
+    return render_template('login.html')
+
+# 🔒 ROTTA DI LOGOUT (CANCELLA IL PASS)
+@app.route('/logout')
+def logout():
+    session.pop('loggato', None)
+    flash('🚪 Sessione chiusa. Alla prossima!', 'info')
+    return redirect('/login')
 
 # 1. DASHBOARD PRINCIPALE
 @app.route('/')
@@ -253,7 +290,7 @@ def gestione_fornitori():
         telefono = request.form['telefono'].strip()
         email = request.form['email'].strip()
         
-        nuovo_f = Fornitore(nome=nome, telephone=telefono, email=email) if hasattr(Fornitore, 'telephone') else Fornitore(nome=nome, telefono=telefono, email=email)
+        nuovo_f = Fornitore(nome=nome, telefono=telefono, email=email)
         db.session.add(nuovo_f)
         db.session.commit()
         return redirect('/fornitori')
@@ -269,10 +306,9 @@ def elimina_fornitore(id):
     db.session.commit()
     return redirect('/fornitori')
 
-# 13. SCHEDA REPORT TEMPORALE (LAVORO DI SPRINT VENDITE)
+# 13. SCHEDA REPORT TEMPORALE
 @app.route('/report', methods=['GET', 'POST'])
 def report_vendite():
-    # Impostiamo le date di default su oggi se l'utente apre solo la pagina (GET)
     data_inizio_str = date.today().strftime('%Y-%m-%d')
     data_fine_str = date.today().strftime('%Y-%m-%d')
     
@@ -280,7 +316,6 @@ def report_vendite():
         data_inizio_str = request.form['data_inizio']
         data_fine_str = request.form['data_fine']
         
-    # Estraiamo le vendite del periodo per fare i totali finanziari puliti
     vendite_periodo = Vendita.query.filter(
         func.date(Vendita.data_vendita) >= data_inizio_str,
         func.date(Vendita.data_vendita) <= data_fine_str
@@ -289,7 +324,6 @@ def report_vendite():
     rep_incasso = sum(v.importo_totale_incassato for v in vendite_periodo)
     rep_guadagno = sum(v.importo_totale_guadagnato for v in vendite_periodo)
     
-    # Estraiamo i singoli pezzi usciti per popolare la tabella
     dettagli_periodo = DettaglioVendita.query.join(Vendita).filter(
         func.date(Vendita.data_vendita) >= data_inizio_str,
         func.date(Vendita.data_vendita) <= data_fine_str
