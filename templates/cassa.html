@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cassa - Via Roma</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f6f9;
+        }
+
+        .barcode-input {
+            font-size: 2rem;
+            text-align: center;
+            letter-spacing: 5px;
+            border: 3px solid #198754;
+        }
+
+        .btn-cassa {
+            padding: 15px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body onload="document.getElementById('barcode_field').focus()">
+
+    <div class="container-fluid py-4">
+        <div class="mb-3">
+            <a href="/" class="btn btn-secondary btn-lg">⬅️ Torna alla Dashboard</a>
+        </div>
+
+        <div class="row g-4">
+            <!-- COLONNA SINISTRA: LETTORE E TABELLA -->
+            <div class="col-12 col-lg-8">
+                <div class="card shadow-sm p-4 mb-4">
+                    <h3 class="h5 text-secondary text-uppercase mb-3">1. Scansiona Articolo</h3>
+                    <input type="text" id="barcode_field" class="form-control barcode-input mb-3"
+                        placeholder="SPARA QUI COL LETTORE" autocomplete="off">
+                    <div id="status_message" class="alert alert-info text-center mb-0">
+                        Pronto per la scansione.
+                    </div>
+                </div>
+
+                <div class="card shadow-sm p-4">
+                    <h3 class="h5 text-secondary text-uppercase mb-3">Articoli in scontrino</h3>
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Codice/Articolo</th>
+                                    <th>Variante</th>
+                                    <th>Prezzo Listino</th>
+                                    <th style="width: 130px;">Sconto (%)</th>
+                                    <th class="text-end">Prezzo Finale</th>
+                                </tr>
+                            </thead>
+                            <tbody id="carrello_tbody">
+                                <!-- I prodotti scansionati compariranno qui dinamicamente -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- COLONNA DESTRA: TOTALE VENDITA -->
+            <div class="col-12 col-lg-4">
+                <div
+                    class="card shadow border-0 bg-dark text-white p-4 text-center h-100 d-flex flex-column justify-content-between">
+                    <div>
+                        <h3 class="text-uppercase opacity-75 h5 mb-4">Totale da Pagare</h3>
+                        <h1 class="display-3 fw-bold my-4 text-success" id="totale_generale">€ 0,00</h1>
+                    </div>
+
+                    <div class="mt-4">
+                        <button class="btn btn-success btn-cassa w-100 py-3 mb-2 shadow" onclick="confermaVendita()">
+                            ✅ CONFERMA VENDITA
+                        </button>
+                        <button class="btn btn-outline-danger w-100 mt-2 btn-sm" onclick="svuotaCarrello()">
+                            ❌ Annulla Scontrino
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let carrello = [];
+
+        // Intercetta l'invio del lettore barcode
+        document.getElementById('barcode_field').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                let barcode = this.value.trim();
+                if (barcode) {
+                    cercaProdotto(barcode);
+                }
+                this.value = ''; // Pulisce il campo per la prossima scansione
+            }
+        });
+
+        // Chiamata AJAX al server Flask
+        function cercaProdotto(barcode) {
+            let msgBox = document.getElementById('status_message');
+
+            fetch(`/api/articolo/${barcode}`)
+                .then(response => {
+                    if (!response.ok) throw new Error('Articolo non trovato');
+                    return response.json();
+                })
+                .then(data => {
+                    // Aggiunge il prodotto al carrello locale
+                    data.sconto = 0; // Sconto iniziale
+                    data.prezzo_finale = data.prezzo_listino;
+                    carrello.push(data);
+
+                    msgBox.className = "alert alert-success text-center";
+                    msgBox.innerText = `Inserito: ${data.nome} (${data.colore} - Taglia ${data.taglia_numero})`;
+
+                    aggiornaInterfaccia();
+                })
+                .catch(error => {
+                    msgBox.className = "alert alert-danger text-center";
+                    msgBox.innerText = `Errore: Barcode ${barcode} non trovato in magazzino!`;
+                });
+        }
+
+        // Aggiorna la tabella e il totale globale
+        function aggiornaInterfaccia() {
+            let tbody = document.getElementById('carrello_tbody');
+            tbody.innerHTML = '';
+            let totale = 0;
+
+            carrello.forEach((item, index) => {
+                let riga = document.createElement('tr');
+                riga.innerHTML = `
+            <td><strong>${item.nome}</strong><br><small class="text-muted">${item.codice_modello} [${item.brand}]</small></td>
+            <td><span class="badge bg-dark">${item.colore}</span> <span class="badge bg-secondary">${item.taglia_numero}</span></td>
+            <td>€ ${item.prezzo_listino.toFixed(2)}</td>
+            <td>
+                <input type="number" class="form-control text-center" value="${item.sconto}" min="0" max="100" onchange="aggiornaSconto(${index}, this.value)">
+            </td>
+            <td class="text-end fw-bold text-success">€ ${item.prezzo_finale.toFixed(2)}</td>
+        `;
+                tbody.appendChild(riga);
+                totale += item.prezzo_finale;
+            });
+
+            document.getElementById('totale_generale').innerText = `€ ${totale.toFixed(2)}`;
+        }
+
+        function aggiornaSconto(index, valoreSconto) {
+            let sconto = parseFloat(valoreSconto) || 0;
+            if (sconto < 0) sconto = 0;
+            if (sconto > 100) sconto = 100;
+
+            carrello[index].sconto = sconto;
+            carrello[index].prezzo_finale = carrello[index].prezzo_listino - (carrello[index].prezzo_listino * (sconto / 100));
+            aggiornaInterfaccia();
+        }
+
+        function svuotaCarrello() {
+            carrello = [];
+            aggiornaInterfaccia();
+            document.getElementById('status_message').className = "alert alert-info text-center";
+            document.getElementById('status_message').innerText = "Scontrino annullato. Pronto.";
+        }
+
+        function confermaVendita() {
+                if (carrello.length === 0) {
+                    alert("Il carrello è vuoto!");
+                    return;
+                }
+
+                // Inviamo il carrello al backend Flask tramite una richiesta POST
+                fetch('/api/vendi', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(carrello)
+                })
+                    .then(response => {
+                        if (!response.ok) throw new Error('Errore durante il salvataggio della vendita');
+                        return response.json();
+                    })
+                    .then(data => {
+                        // Se il server risponde correttamente, puliamo la cassa
+                        alert(`Vendita registrata con successo! Totale incassato: € ${data.totale.toFixed(2)}`);
+                        svuotaCarrello();
+                    })
+                    .catch(error => {
+                        alert("Si è verificato un errore durante la vendita. Controlla il magazzino.");
+                        console.error(error);
+                    });
+            }
+    </script>
+
+</body>
+
+</html>

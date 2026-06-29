@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scadenziario - Via Roma</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f6f9;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container py-4">
+        <div class="mb-4 d-flex justify-content-between align-items-center">
+            <a href="/" class="btn btn-secondary btn-lg">⬅️ Torna alla Dashboard</a>
+            <h1 class="h2 mb-0">📅 Scadenziario Fornitori</h1>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-12 col-md-4">
+                <div class="card shadow-sm p-4 bg-white rounded-3">
+                    <h3 class="h5 text-danger border-bottom pb-2 mb-3">Aggiungi Scadenza</h3>
+                    <form action="/scadenziario" method="POST">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Fornitore</label>
+                            <select name="fornitore_id" class="form-select" required>
+                                <option value="">-- Seleziona --</option>
+                                {% for f in fornitori %}
+                                <option value="{{ f.id }}">{{ f.nome }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Descrizione / Nota</label>
+                            <input type="text" name="descrizione" class="form-control"
+                                placeholder="es. Fattura scarpe autunno">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Importo (€)</label>
+                            <input type="number" step="0.01" name="importo" class="form-control" placeholder="0.00"
+                                required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Data Scadenza</label>
+                            <input type="date" name="data_scadenza" class="form-control" required>
+                        </div>
+                        <button type="submit" class="btn btn-danger w-100 py-2 fw-bold mt-2">💾 SALVA SCADENZA</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-8">
+                <div class="card shadow-sm p-4 bg-white rounded-3">
+                    <h3 class="h5 text-secondary text-uppercase mb-3">Fatture da pagare</h3>
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Fornitore / Nota</th>
+                                    <th>Scadenza</th>
+                                    <th>Importo</th>
+                                    <th class="text-end">Azione</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for scadenza in scadenze %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ scadenza.fornitore.nome }}</strong><br>
+                                        <small class="text-muted">{{ scadenza.descrizione }}</small>
+                                    </td>
+                                    <td><span class="badge bg-warning text-dark">{{
+                                            scadenza.data_scadenza.strftime('%d/%m/%Y') }}</span></td>
+                                    <td class="fw-bold text-danger">€ {{ "%.2f"|format(scadenza.importo) }}</td>
+                                    <td class="text-end">
+                                        <form action="/scadenziario/paga/{{ scadenza.id }}" method="POST"
+                                            style="display:inline;">
+                                            <button type="submit" class="btn btn-success btn-sm fw-bold">✅ SEGNA
+                                                PAGATO</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted py-4">Evviva! Non ci sono fatture da
+                                        pagare al momento. 🎉</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>

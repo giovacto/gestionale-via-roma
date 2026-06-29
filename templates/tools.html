@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rettifica Magazzino - Via Roma</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f6f9;
+        }
+
+        .table-container {
+            background-color: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container-fluid py-4">
+        <div class="mb-4 d-flex justify-content-between align-items-center">
+            <a href="/" class="btn btn-secondary btn-lg">⬅️ Torna alla Dashboard</a>
+            <h1 class="h2 mb-0">🛠️ Strumenti e Rettifica Inventario</h1>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm fw-bold" role="alert">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <div class="card shadow-sm p-3 mb-4 bg-white">
+            <input type="text" id="ricerca_input" class="form-control form-control-lg text-center"
+                placeholder="🔍 Digita Modello, Marca, Colore o spara un Barcode per filtrare..."
+                onkeyup="filtraTabella()">
+        </div>
+
+        <div class="card shadow-sm p-4 bg-white rounded-3">
+            <div class="table-responsive">
+                <table class="table table-hover table-striped align-middle" id="tabella_magazzino">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Modello / Brand</th>
+                            <th>Tipologia</th>
+                            <th>Colore</th>
+                            <th>Numero</th>
+                            <th class="text-center" style="width: 180px;">Giacenza Attuale</th>
+                            <th>Barcode</th>
+                            <th class="text-end">Azioni Destruttutive</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for variante in varianti %}
+                        <tr>
+                            <td>
+                                <strong>{{ variante.articolo.nome }}</strong><br>
+                                <small class="text-muted">{{ variante.articolo.codice_modello }} [{{
+                                    variante.articolo.brand }}]</small>
+                            </td>
+                            <td><span class="badge bg-light text-dark border">{{ variante.articolo.tipologia }}</span>
+                            </td>
+                            <td>{{ variante.colore }}</td>
+                            <td><span class="badge bg-dark fs-6">{{ variante.taglia_numero }}</span></td>
+
+                            <td class="text-center">
+                                <div class="input-group input-group-sm justify-content-center">
+                                    <form action="/tools/regola/{{ variante.id }}/meno" method="POST"
+                                        style="display:inline;">
+                                        <button type="submit" class="btn btn-outline-danger fw-bold">- 1</button>
+                                    </form>
+                                    <span class="input-group-text fw-bold bg-white px-3">{{ variante.giacenza }}
+                                        pz</span>
+                                    <form action="/tools/regola/{{ variante.id }}/piu" method="POST"
+                                        style="display:inline;">
+                                        <button type="submit" class="btn btn-outline-success fw-bold">+ 1</button>
+                                    </form>
+                                </div>
+                            </td>
+
+                            <td class="text-muted font-monospace">{{ variante.barcode }}</td>
+
+                            <td class="text-end">
+                                <form action="/tools/regola/{{ variante.id }}/elimina" method="POST"
+                                    onsubmit="return confirm('Sei sicuro di voler cancellare questa variante da magazzino?');"
+                                    style="display:inline;">
+                                    <button type="submit" class="btn btn-danger btn-sm">🗑️ Elimina</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">Il magazzino è completamente vuoto al
+                                momento. 📦</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Filtro istantaneo lato client senza ricaricare la pagina
+        function filtraTabella() {
+            let input = document.getElementById("ricerca_input").value.toUpperCase();
+            let rows = document.getElementById("tabella_magazzino").getElementsByTagName("tr");
+
+            for (let i = 1; i < rows.length; i++) {
+                let testoRiga = rows[i].innerText.toUpperCase();
+                if (testoRiga.indexOf(input) > -1) {
+                    rows[i].style.display = "";
+                } else {
+                    rows[i].style.display = "none";
+                }
+            }
+        }
+    </script>
+
+</body>
+
+</html>

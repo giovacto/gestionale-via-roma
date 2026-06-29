@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report Vendite - Via Roma</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f6f9;
+        }
+
+        .card-Fatturato {
+            background: linear-gradient(45deg, #202c39, #2b3e50);
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container py-4">
+        <div class="mb-4 d-flex justify-content-between align-items-center">
+            <a href="/" class="btn btn-secondary btn-lg">⬅️ Torna alla Dashboard</a>
+            <h1 class="h2 mb-0">📊 Report & Analisi Vendite</h1>
+        </div>
+
+        <div class="card shadow-sm p-4 bg-white rounded-3 mb-4">
+            <h5 class="text-secondary mb-3 text-uppercase small fw-bold">Scegli il periodo di analisi</h5>
+            <form action="/report" method="POST" class="row g-3 align-items-end">
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-bold">Data Inizio</label>
+                    <input type="date" name="data_inizio" class="form-control form-control-lg" value="{{ data_inizio }}"
+                        required>
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-bold">Data Fine</label>
+                    <input type="date" name="data_fine" class="form-control form-control-lg" value="{{ data_fine }}"
+                        required>
+                </div>
+                <div class="col-12 col-md-4">
+                    <button type="submit" class="btn btn-dark btn-lg w-100 fw-bold py-2">🔍 GENERA REPORT</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="row g-4 mb-5">
+            <div class="col-12 col-md-4">
+                <div class="p-4 bg-white rounded-3 shadow-sm text-center border-top border-primary border-4">
+                    <h6 class="text-uppercase text-muted small">Pezzi Venduti nel Periodo</h6>
+                    <h2 class="display-5 fw-bold text-primary">{{ rep_pezzi }} <span class="fs-4">paia</span></h2>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="p-4 bg-white rounded-3 shadow-sm text-center border-top border-success border-4">
+                    <h6 class="text-uppercase text-muted small">Totale Incassato (Lordo)</h6>
+                    <h2 class="display-5 fw-bold text-success">€ {{ "%.2f"|format(rep_incasso) }}</h2>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="p-4 bg-white rounded-3 shadow-sm text-center border-top border-info border-4">
+                    <h6 class="text-uppercase text-muted small">Guadagno Netto Reale</h6>
+                    <h2 class="display-5 fw-bold text-info">€ {{ "%.2f"|format(rep_guadagno) }}</h2>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm p-4 bg-white rounded-3">
+            <h3 class="h5 text-secondary text-uppercase mb-3">Elenco analitico articoli usciti</h3>
+            <div class="table-responsive">
+                <table class="table table-hover table-striped align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Data / Ora</th>
+                            <th>Articolo / Modello</th>
+                            <th>Fornitore / Brand</th>
+                            <th>Variante</th>
+                            <th class="text-end">Prezzo Venduto</th>
+                            <th class="text-end">Guadagno Netto</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in dettagli %}
+                        <tr>
+                            <td><small class="text-muted">{{ d.vendita.data_vendita.strftime('%d/%m/%Y %H:%M')
+                                    }}</small></td>
+                            <td>
+                                <strong>{{ d.variante.articolo.nome }}</strong><br>
+                                <small class="font-monospace text-muted">{{ d.variante.articolo.codice_modello
+                                    }}</small>
+                            </td>
+                            <td><span class="badge bg-light text-dark border">{{ d.variante.articolo.fornitore.nome
+                                    }}</span></td>
+                            <td><span class="badge bg-dark">{{ d.variante.colore }}</span> Taglia <strong>{{
+                                    d.variante.taglia_numero }}</strong></td>
+                            <td class="text-end fw-bold text-success">€ {{ "%.2f"|format(d.prezzo_singolo_venduto) }}
+                            </td>
+                            <td class="text-end fw-bold text-info">€ {{ "%.2f"|format(d.prezzo_singolo_venduto -
+                                d.variante.articolo.prezzo_acquisto) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">Nessuna vendita registrata in questo
+                                intervallo di date. 📊</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>

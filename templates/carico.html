@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carico Magazzino - Via Roma</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f6f9;
+        }
+
+        .form-label {
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .form-control-lg,
+        .form-select-lg {
+            border-radius: 10px;
+        }
+
+        .variante-row {
+            background-color: #f8f9fa;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container py-4">
+        <div class="mb-4 d-flex justify-content-between align-items-center">
+            <a href="/" class="btn btn-secondary btn-lg">⬅️ Torna alla Dashboard</a>
+            <h1 class="h2 mb-0">📦 Nuovi Arrivi / Carico Articolo</h1>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm fw-bold" role="alert">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <div id="alert_esistente" class="alert alert-warning d-none shadow-sm" role="alert">
+            <h5>⚠️ MODELLO GIÀ PRESENTE IN INTEGRATO!</h5>
+            <p class="mb-2">Questo modello è già registrato. Sotto puoi vedere le giacenze attuali. Inserisci nelle
+                caselle solo le <strong>nuove quantità</strong> arrivate per aggiornare l'inventario.</p>
+            <div class="table-responsive bg-white rounded p-2">
+                <table class="table table-sm table-bordered mb-0 align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Colore</th>
+                            <th>Taglia/Numero</th>
+                            <th>Giacenza Attuale</th>
+                            <th>Barcode</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabella_giacenze_esistenti">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card shadow-sm p-4 bg-white rounded-3">
+            <form action="/carico" method="POST">
+                <div class="row g-3">
+
+                    <h3 class="h5 text-primary border-bottom pb-2 mt-4">1. Informazioni Modello</h3>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">Codice Modello (Univoco)</label>
+                        <input type="text" name="codice_modello" id="codice_modello"
+                            class="form-control form-control-lg border-primary" placeholder="es. DECOLLETE-01" required
+                            autocomplete="off">
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">Nome Prodotto</label>
+                        <input type="text" name="nome" id="nome" class="form-control form-control-lg"
+                            placeholder="es. Decollete Tacco 8" required>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">Seleziona Fornitore</label>
+                        <select name="fornitore_id" id="fornitore_id" class="form-select form-select-lg border-primary"
+                            required>
+                            <option value="">-- Scegli Fornitore --</option>
+                            {% for f in fornitori %}
+                            <option value="{{ f.id }}">{{ f.nome }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">Tipologia Articolo</label>
+                        <select name="tipologia" id="tipologia" class="form-select form-select-lg" required>
+                            <option value="Scarpe">Scarpe</option>
+                            <option value="Cinture">Cinture</option>
+                            <option value="Foulard">Foulard</option>
+                            <option value="Portafogli">Portafogli</option>
+                        </select>
+                    </div>
+
+                    <h3 class="h5 text-primary border-bottom pb-2 mt-4">2. Prezzi e Margini</h3>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Prezzo di Acquisto (€)</label>
+                        <input type="number" step="0.01" name="prezzo_acquisto" id="prezzo_acquisto"
+                            class="form-control form-control-lg" placeholder="0.00" required>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Ricarico (%)</label>
+                        <input type="number" name="ricarico_percentuale" id="ricarico_percentuale"
+                            class="form-control form-control-lg" value="100" required>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mt-5">
+                        <h3 class="h5 text-primary mb-0">3. Inserimento Misure, Barcode e Quantità</h3>
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold"
+                            onclick="aggiungiRigaVariante()">➕ Aggiungi altra misura</button>
+                    </div>
+
+                    <div id="contenitore_varianti">
+                        <div class="row g-2 variante-row align-items-end">
+                            <div class="col-12 col-md-3">
+                                <label class="form-label small">Colore</label>
+                                <input type="text" name="colore[]" class="form-control" value="Nero" required>
+                            </div>
+                            <div class="col-12 col-md-2">
+                                <label class="form-label small">Numero/Taglia</label>
+                                <input type="text" name="taglia_numero[]" class="form-control" placeholder="es. 38"
+                                    required>
+                            </div>
+                            <div class="col-12 col-md-2">
+                                <label class="form-label small">Nuova Quantità</label>
+                                <input type="number" name="giacenza[]" class="form-control" value="1" min="0" required>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label small">Codice a Barre (Barcode)</label>
+                                <input type="text" name="barcode[]" class="form-control border-warning"
+                                    placeholder="Spara col lettore" required autocomplete="off">
+                            </div>
+                            <div class="col-12 col-md-1 text-end">
+                                <button type="button" class="btn btn-danger w-100"
+                                    onclick="rimuoviRiga(this)">🗑️</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 mt-5">
+                        <button type="submit" class="btn btn-warning btn-lg w-100 text-white py-3 fw-bold shadow">
+                            💾 SALVA E AGGIORNA MAGAZZINO
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function aggiungiRigaVariante() {
+            let container = document.getElementById('contenitore_varianti');
+            let ultimiColori = document.getElementsByName('colore[]');
+            let colorePredefinito = ultimiColori.length > 0 ? ultimiColori[ultimiColori.length - 1].value : "Nero";
+
+            let nuovaRiga = document.createElement('div');
+            nuovaRiga.className = "row g-2 variante-row align-items-end";
+            nuovaRiga.innerHTML = `
+        <div class="col-12 col-md-3">
+            <input type="text" name="colore[]" class="form-control" value="${colorePredefinito}" required>
+        </div>
+        <div class="col-12 col-md-2">
+            <input type="text" name="taglia_numero[]" class="form-control" placeholder="es. 39" required>
+        </div>
+        <div class="col-12 col-md-2">
+            <input type="number" name="giacenza[]" class="form-control" value="1" min="0" required>
+        </div>
+        <div class="col-12 col-md-4">
+            <input type="text" name="barcode[]" class="form-control border-warning" placeholder="Spara col lettore" required autocomplete="off">
+        </div>
+        <div class="col-12 col-md-1 text-end">
+            <button type="button" class="btn btn-danger w-100" onclick="rimuoviRiga(this)">🗑️</button>
+        </div>
+    `;
+            container.appendChild(nuovaRiga);
+            nuovaRiga.querySelector('input[name="taglia_numero[]"]').focus();
+        }
+
+        function rimuoviRiga(bottone) {
+            let righe = document.querySelectorAll('.variante-row');
+            if (righe.length > 1) {
+                bottone.closest('.variante-row').remove();
+            } else {
+                alert("Devi lasciare almeno una misura per l'articolo!");
+            }
+        }
+
+        // CONTROLLO AJAX IN TEMPO REALE SUL CODICE MODELLO
+        document.getElementById('codice_modello').addEventListener('change', function () {
+            let codice = this.value.trim();
+            if (!codice) return;
+
+            fetch(`/api/check_modello/${codice}`)
+                .then(response => response.json())
+                .then(data => {
+                    let alertBox = document.getElementById('alert_esistente');
+                    let tbody = document.getElementById('tabella_giacenze_esistenti');
+
+                    if (data.esiste) {
+                        document.getElementById('nome').value = data.nome;
+                        document.getElementById('fornitore_id').value = data.fornitore_id;
+                        document.getElementById('tipologia').value = data.tipologia;
+                        document.getElementById('prezzo_acquisto').value = data.prezzo_acquisto;
+                        document.getElementById('ricarico_percentuale').value = data.ricarico_percentuale;
+
+                        tbody.innerHTML = '';
+                        data.varianti.forEach(v => {
+                            let riga = `<tr>
+                        <td><span class="badge bg-secondary">${v.colore}</span></td>
+                        <td><strong>${v.taglia_numero}</strong></td>
+                        <td class="${v.giacenza == 0 ? 'text-danger fw-bold' : 'fw-bold'}">${v.giacenza} pz</td>
+                        <td class="text-muted">${v.barcode}</td>
+                    </tr>`;
+                            tbody.innerHTML += riga;
+                        });
+
+                        alertBox.classList.remove('d-none');
+                    } else {
+                        alertBox.classList.add('d-none');
+                    }
+                });
+        });
+
+        // 🌟 CONTROLLO IN TEMPO REALE SUI CODICI A BARRE (EVITA ERRORI)
+        document.getElementById('contenitore_varianti').addEventListener('change', function (e) {
+            // Intercettiamo il cambio di testo solo sui campi che si chiamano 'barcode[]'
+            if (e.target && e.target.name === 'barcode[]') {
+                let barcodeDigitato = e.target.value.trim();
+                if (!barcodeDigitato) return;
+
+                let campoInput = e.target;
+
+                // Interroghiamo l'API interna per verificare se questo specifico barcode esiste già
+                fetch(`/api/articolo/${barcodeDigitato}`)
+                    .then(response => {
+                        if (response.ok) {
+                            // Se la risposta è OK (200), l'articolo esiste già nel database!
+                            return response.json();
+                        }
+                        return null;
+                    })
+                    .then(data => {
+                        if (data) {
+                            // Blocca l'operatore con un pop-up chiaro
+                            alert(`⚠️ ATTENTO! Il codice a barre [ ${barcodeDigitato} ] è già stato caricato nel sistema!\n\n` +
+                                `Articolo associato: ${data.nome} (${data.colore} - Num. ${data.taglia_numero})\n\n` +
+                                `Se devi aggiungere paia a questo codice, digitalo nella casella del modello principale o usa il menu TOOLS.`);
+
+                            // Svuota immediatamente la casella per obbligare alla correzione
+                            campoInput.value = '';
+                            campoInput.focus();
+                        }
+                    });
+            }
+        });
+    </script>
+
+</body>
+
+</html>

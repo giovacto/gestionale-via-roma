@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anagrafica Fornitori - Via Roma</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f6f9;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container py-4">
+        <div class="mb-4 d-flex justify-content-between align-items-center">
+            <a href="/" class="btn btn-secondary btn-lg">⬅️ Torna alla Dashboard</a>
+            <h1 class="h2 mb-0">👥 Anagrafica Fornitori</h1>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-12 col-md-4">
+                <div class="card shadow-sm p-4 bg-white rounded-3">
+                    <h3 class="h5 text-primary border-bottom pb-2 mb-3">Nuovo Fornitore</h3>
+                    <form action="/fornitori" method="POST">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Ragione Sociale / Nome</label>
+                            <input type="text" name="nome" class="form-control" placeholder="es. NeroGiardini S.p.A."
+                                required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Telefono</label>
+                            <input type="text" name="telefono" class="form-control" placeholder="es. 0733XXXXXX">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Email</label>
+                            <input type="email" name="email" class="form-control" placeholder="es. ordini@brand.com">
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100 py-2 fw-bold mt-2">💾 SALVA
+                            FORNITORE</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-8">
+                <div class="card shadow-sm p-4 bg-white rounded-3">
+                    <h3 class="h5 text-secondary text-uppercase mb-3">Fornitori Registrati</h3>
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Nome Fornitore</th>
+                                    <th>Contatti</th>
+                                    <th class="text-end">Azioni</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for f in fornitori %}
+                                <tr>
+                                    <td><strong class="fs-5 text-dark">{{ f.nome }}</strong></td>
+                                    <td>
+                                        <small>📞 {{ f.telefono or 'N.D.' }}</small><br>
+                                        <small>✉️ {{ f.email or 'N.D.' }}</small>
+                                    </td>
+                                    <td class="text-end">
+                                        <form action="/fornitori/elimina/{{ f.id }}" method="POST"
+                                            onsubmit="return confirm('Attenzione: eliminando il fornitore eliminerai anche tutti i suoi articoli e scadenze collegati. Confermi?');">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm">🗑️
+                                                Rimuovi</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted py-4">Nessun fornitore censito.
+                                        Inserisci il primo a sinistra! 👥</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>
