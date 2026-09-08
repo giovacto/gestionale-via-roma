@@ -1,106 +1,145 @@
 from flask import Flask, render_template, request, redirect, flash, jsonify, session
-from database.models import db, Fornitore, Articolo, VarianteArticolo, Vendita, DettaglioVendita, Scadenza
+from database.models import (
+    db,
+    Fornitore,
+    Articolo,
+    VarianteArticolo,
+    Vendita,
+    DettaglioVendita,
+    Scadenza,
+)
 from datetime import datetime, date
 from sqlalchemy import func
 import os
 
+# 🚀 IMPORTAZIONE MODULO STRATOOS PER SYNC E-COMMERCE
+try:
+    from stratoos import aggiorna_giacenza_stratoos
+except ImportError:
+    # Funzione di riserva nel caso il file stratoos.py non sia ancora presente
+    def aggiorna_giacenza_stratoos(barcode, giacenza):
+        pass
+
+
 app = Flask(__name__)
-app.secret_key = 'chiave_segreta_via_roma_2026'
+app.secret_key = "chiave_segreta_via_roma_2026"
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(BASE_DIR, 'magazzino.db')}"
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config["SQLALCHEMY_DATABASE_URI"] = (
+    f"sqlite:///{os.path.join(BASE_DIR, 'magazzino.db')}"
+)
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
 
 with app.app_context():
     db.create_all()
 
+
 # 🛡️ SCUDO DI PROTEZIONE: CONTROLLO LOGIN AUTOMATICO SU OGNI PAGINA
 @app.before_request
 def blinda_pagine():
     # Elenco delle rotte libere che non richiedono di essere loggati
-    rotte_libere = ['login', 'static']
-    
+    rotte_libere = ["login", "static"]
+
     # Se l'utente sta andando sul login o sui file CSS/JS, lascialo passare
-    if request.endpoint in rotte_libere or request.path.startswith('/static/'):
+    if request.endpoint in rotte_libere or request.path.startswith("/static/"):
         return
-        
+
     # Se nella sessione del browser non c'è il pass di login, rimbalzalo al modulo d'accesso
-    if not session.get('loggato'):
-        return redirect('/login')
+    if not session.get("loggato"):
+        return redirect("/login")
+
 
 # 🔓 ROTTA DI LOGIN (VERIFICA CREDENZIALI STATICHE)
-@app.route('/login', methods=['GET', 'POST'])
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == 'POST':
-        username = request.form['username'].strip()
-        password = request.form['password'].strip()
-        
+    if request.method == "POST":
+        username = request.form["username"].strip()
+        password = request.form["password"].strip()
+
         # Controllo statico richiesto
-        if username == 'admin' and password == 'Loredanalo':
-            session['loggato'] = True
-            return redirect('/')
+        if username == "admin" and password == "Loredanalo":
+            session["loggato"] = True
+            return redirect("/")
         else:
-            flash('❌ Nome utente o Password errati!', 'danger')
-            
-    return render_template('login.html')
+            flash("❌ Nome utente o Password errati!", "danger")
+
+    return render_template("login.html")
+
 
 # 🔒 ROTTA DI LOGOUT (CANCELLA IL PASS)
-@app.route('/logout')
+@app.route("/logout")
 def logout():
-    session.pop('loggato', None)
-    flash('🚪 Sessione chiusa. Alla prossima!', 'info')
-    return redirect('/login')
+    session.pop("loggato", None)
+    flash("🚪 Sessione chiusa. Alla prossima!", "info")
+    return redirect("/login")
+
 
 # 1. DASHBOARD PRINCIPALE
-@app.route('/')
+@app.route("/")
 def dashboard():
     scadenze_attive = Scadenza.query.filter_by(pagato=False).count()
     oggi = date.today()
-    
-    stat_oggi = db.session.query(
-        func.coalesce(func.sum(DettaglioVendita.quantita), 0),
-        func.coalesce(func.sum(Vendita.importo_totale_incassato), 0.0),
-        func.coalesce(func.sum(Vendita.importo_totale_guadagnato), 0.0)
-    ).select_from(Vendita).join(DettaglioVendita).filter(func.date(Vendita.data_vendita) == oggi).first()
 
-    return render_template('dashboard.html', 
-                           totale_pezzi=stat_oggi[0],
-                           totale_incassato=stat_oggi[1],
-                           totale_guadagnato=stat_oggi[2],
-                           scadenze_attive=scadenze_attive)
+    stat_oggi = (
+        db.session.query(
+            func.coalesce(func.sum(DettaglioVendita.quantita), 0),
+            func.coalesce(func.sum(Vendita.importo_totale_incassato), 0.0),
+            func.coalesce(func.sum(Vendita.importo_totale_guadagnato), 0.0),
+        )
+        .select_from(Vendita)
+        .join(DettaglioVendita)
+        .filter(func.date(Vendita.data_vendita) == oggi)
+        .first()
+    )
+
+    return render_template(
+        "dashboard.html",
+        totale_pezzi=stat_oggi[0],
+        totale_incassato=stat_oggi[1],
+        totale_guadagnato=stat_oggi[2],
+        scadenze_attive=scadenze_attive,
+    )
+
 
 # 2. PUNTO CASSA
-@app.route('/cassa')
+@app.route("/cassa")
 def cassa():
-    return render_template('cassa.html')
+    return render_template("cassa.html")
+
 
 # 3. INTERFACCIA CARICO MERCI
-@app.route('/carico', methods=['GET', 'POST'])
+@app.route("/carico", methods=["GET", "POST"])
 def carico_merci():
-    if request.method == 'POST':
-        codice_modello = request.form['codice_modello'].strip()
-        nome = request.form['nome'].strip()
-        fornitore_id = int(request.form['fornitore_id'])
-        tipologia = request.form['tipologia']
-        prezzo_acquisto = float(request.form['prezzo_acquisto'])
-        ricarico_percentuale = float(request.form['ricarico_percentuale'])
-        
-        colori = request.form.getlist('colore[]')
-        taglie_numeri = request.form.getlist('taglia_numero[]')
-        giacenze = request.form.getlist('giacenza[]')
-        barcodes = request.form.getlist('barcode[]')
+    if request.method == "POST":
+        codice_modello = request.form["codice_modello"].strip()
+        nome = request.form["nome"].strip()
+        fornitore_id = int(request.form["fornitore_id"])
+        tipologia = request.form["tipologia"]
+        prezzo_acquisto = float(request.form["prezzo_acquisto"])
+        ricarico_percentuale = float(request.form["ricarico_percentuale"])
 
-        prezzo_listino = prezzo_acquisto + (prezzo_acquisto * (ricarico_percentuale / 100.0))
+        colori = request.form.getlist("colore[]")
+        taglie_numeri = request.form.getlist("taglia_numero[]")
+        giacenze = request.form.getlist("giacenza[]")
+        barcodes = request.form.getlist("barcode[]")
+
+        prezzo_listino = prezzo_acquisto + (
+            prezzo_acquisto * (ricarico_percentuale / 100.0)
+        )
 
         articolo = Articolo.query.filter_by(codice_modello=codice_modello).first()
-        
+
         if not articolo:
             articolo = Articolo(
-                codice_modello=codice_modello, nome=nome, fornitore_id=fornitore_id,
-                tipologia=tipologia, prezzo_acquisto=prezzo_acquisto,
-                ricarico_percentuale=ricarico_percentuale, prezzo_listino=prezzo_listino
+                codice_modello=codice_modello,
+                nome=nome,
+                fornitore_id=fornitore_id,
+                tipologia=tipologia,
+                prezzo_acquisto=prezzo_acquisto,
+                ricarico_percentuale=ricarico_percentuale,
+                prezzo_listino=prezzo_listino,
             )
             db.session.add(articolo)
             db.session.commit()
@@ -115,7 +154,8 @@ def carico_merci():
             msg_successo = f"Modello '{articolo.nome}' esistente aggiornato! "
 
         conteggio_inseriti = 0
-        
+        varianti_caricate = []
+
         for i in range(len(taglie_numeri)):
             bcode = barcodes[i].strip()
             num = taglie_numeri[i].strip()
@@ -126,218 +166,279 @@ def carico_merci():
                 continue
 
             variante_esistente = VarianteArticolo.query.filter_by(barcode=bcode).first()
-            
+
             if variante_esistente:
                 variante_esistente.giacenza += qta
                 conteggio_inseriti += qta
+                varianti_caricate.append(variante_esistente)
             else:
                 nuova_variante = VarianteArticolo(
-                    articolo_id=articolo.id, barcode=bcode, colore=col,
-                    taglia_numero=num, giacenza=qta
+                    articolo_id=articolo.id,
+                    barcode=bcode,
+                    colore=col,
+                    taglia_numero=num,
+                    giacenza=qta,
                 )
                 db.session.add(nuova_variante)
                 conteggio_inseriti += qta
+                varianti_caricate.append(nuova_variante)
 
         db.session.commit()
+
+        # 🚀 NOTIFICA AUTOMATICA A STRATOOS (SYNC CARICO MERCI)
+        for v in varianti_caricate:
+            aggiorna_giacenza_stratoos(v.barcode, v.giacenza)
+
         flash(f"⚓ {msg_successo} Movimentati {conteggio_inseriti} pezzi.", "success")
-        return redirect('/carico')
+        return redirect("/carico")
 
     lista_fornitori = Fornitore.query.order_by(Fornitore.nome.asc()).all()
-    return render_template('carico.html', fornitori=lista_fornitori)
+    return render_template("carico.html", fornitori=lista_fornitori)
+
 
 # 4. API VERIFICA MODELLO
-@app.route('/api/check_modello/<codice>')
+@app.route("/api/check_modello/<codice>")
 def check_modello(codice):
     articolo = Articolo.query.filter_by(codice_modello=codice.strip()).first()
     if not articolo:
         return jsonify({"esiste": False})
-    
+
     lista_varianti = []
     for v in articolo.varianti:
-        lista_varianti.append({
-            "colore": v.colore,
-            "taglia_numero": v.taglia_numero,
-            "giacenza": v.giacenza,
-            "barcode": v.barcode
-        })
-        
-    return jsonify({
-        "esiste": True,
-        "nome": articolo.nome,
-        "fornitore_id": articolo.fornitore_id,
-        "tipologia": articolo.tipologia,
-        "prezzo_acquisto": articolo.prezzo_acquisto,
-        "ricarico_percentuale": articolo.ricarico_percentuale,
-        "varianti": lista_varianti
-    })
+        lista_varianti.append(
+            {
+                "colore": v.colore,
+                "taglia_numero": v.taglia_numero,
+                "giacenza": v.giacenza,
+                "barcode": v.barcode,
+            }
+        )
+
+    return jsonify(
+        {
+            "esiste": True,
+            "nome": articolo.nome,
+            "fornitore_id": articolo.fornitore_id,
+            "tipologia": articolo.tipologia,
+            "prezzo_acquisto": articolo.prezzo_acquisto,
+            "ricarico_percentuale": articolo.ricarico_percentuale,
+            "varianti": lista_varianti,
+        }
+    )
+
 
 # 5. API RICERCA IN CASSA
-@app.route('/api/articolo/<barcode>')
+@app.route("/api/articolo/<barcode>")
 def cerca_articolo(barcode):
     variante = VarianteArticolo.query.filter_by(barcode=barcode).first()
     if not variante:
         return jsonify({"errore": "Articolo non trovato"}), 404
-    
+
     articolo = variante.articolo
-    return jsonify({
-        "variante_id": variante.id,
-        "nome": articolo.nome,
-        "brand": articolo.fornitore.nome,
-        "codice_modello": articolo.codice_modello,
-        "colore": variante.colore,
-        "taglia_numero": variante.taglia_numero,
-        "prezzo_listino": articolo.prezzo_listino
-    })
+    return jsonify(
+        {
+            "variante_id": variante.id,
+            "nome": articolo.nome,
+            "brand": articolo.fornitore.nome,
+            "codice_modello": articolo.codice_modello,
+            "colore": variante.colore,
+            "taglia_numero": variante.taglia_numero,
+            "prezzo_listino": articolo.prezzo_listino,
+        }
+    )
+
 
 # 6. API CHIUDI VENDITA
-@app.route('/api/vendi', methods=['POST'])
+@app.route("/api/vendi", methods=["POST"])
 def elabora_vendita():
     dati_carrello = request.json
     if not dati_carrello:
         return jsonify({"errore": "Carrello vuoto"}), 400
-        
+
     importo_totale_incassato = 0.0
     importo_totale_guadagnato = 0.0
     dettagli_da_salvare = []
+    varianti_da_sincronizzare = []
 
     for item in dati_carrello:
-        variante = VarianteArticolo.query.get(item['variante_id'])
+        variante = VarianteArticolo.query.get(item["variante_id"])
         if not variante:
             continue
-        
+
         articolo = variante.articolo
-        prezzo_venduto = float(item['prezzo_finale'])
+        prezzo_venduto = float(item["prezzo_finale"])
         guadagno_singolo = prezzo_venduto - articolo.prezzo_acquisto
-        
+
         importo_totale_incassato += prezzo_venduto
         importo_totale_guadagnato += guadagno_singolo
-        
+
         variante.giacenza -= 1
-        
+        varianti_da_sincronizzare.append(variante)
+
         dettaglio = DettaglioVendita(
-            variante_id=variante.id,
-            quantita=1,
-            prezzo_singolo_venduto=prezzo_venduto
+            variante_id=variante.id, quantita=1, prezzo_singolo_venduto=prezzo_venduto
         )
         dettagli_da_salvare.append(dettaglio)
 
     nuova_vendita = Vendita(
         importo_totale_incassato=importo_totale_incassato,
         importo_totale_guadagnato=importo_totale_guadagnato,
-        dettagli=dettagli_da_salvare
+        dettagli=dettagli_da_salvare,
     )
-    
+
     db.session.add(nuova_vendita)
     db.session.commit()
 
+    # 🚀 NOTIFICA AUTOMATICA A STRATOOS (SYNC CASSA)
+    for v in varianti_da_sincronizzare:
+        aggiorna_giacenza_stratoos(v.barcode, v.giacenza)
+
     return jsonify({"successo": True, "totale": importo_totale_incassato})
 
+
 # 7. SCADENZIARIO
-@app.route('/scadenziario', methods=['GET', 'POST'])
+@app.route("/scadenziario", methods=["GET", "POST"])
 def scadenziario():
-    if request.method == 'POST':
-        fornitore_id = int(request.form['fornitore_id'])
-        descrizione = request.form['descrizione']
-        importo = float(request.form['importo'])
-        data_scadenza = datetime.strptime(request.form['data_scadenza'], '%Y-%m-%d').date()
+    if request.method == "POST":
+        fornitore_id = int(request.form["fornitore_id"])
+        descrizione = request.form["descrizione"]
+        importo = float(request.form["importo"])
+        data_scadenza = datetime.strptime(
+            request.form["data_scadenza"], "%Y-%m-%d"
+        ).date()
 
         nuova_scadenza = Scadenza(
-            fornitore_id=fornitore_id, descrizione=descrizione,
-            importo=importo, data_scadenza=data_scadenza, pagato=False
+            fornitore_id=fornitore_id,
+            descrizione=descrizione,
+            importo=importo,
+            data_scadenza=data_scadenza,
+            pagato=False,
         )
         db.session.add(nuova_scadenza)
         db.session.commit()
-        return redirect('/scadenziario')
+        return redirect("/scadenziario")
 
-    scadenze_da_pagare = Scadenza.query.filter_by(pagato=False).order_by(Scadenza.data_scadenza.asc()).all()
+    scadenze_da_pagare = (
+        Scadenza.query.filter_by(pagato=False)
+        .order_by(Scadenza.data_scadenza.asc())
+        .all()
+    )
     lista_fornitori = Fornitore.query.order_by(Fornitore.nome.asc()).all()
-    return render_template('scadenziario.html', scadenze=scadenze_da_pagare, fornitori=lista_fornitori)
+    return render_template(
+        "scadenziario.html", scadenze=scadenze_da_pagare, fornitori=lista_fornitori
+    )
+
 
 # 8. MARCA SCADENZA PAGATA
-@app.route('/scadenziario/paga/<int:id>', methods=['POST'])
+@app.route("/scadenziario/paga/<int:id>", methods=["POST"])
 def paga_scadenza(id):
     scadenza = Scadenza.query.get(id)
     if scadenza:
         scadenza.pagato = True
         db.session.commit()
-    return redirect('/scadenziario')
+    return redirect("/scadenziario")
+
 
 # 9. INVENTARIO COMPLETO (TOOLS)
-@app.route('/tools')
+@app.route("/tools")
 def tools():
-    tutte_varianti = VarianteArticolo.query.join(Articolo).join(Fornitore).order_by(Fornitore.nome, Articolo.nome).all()
-    return render_template('tools.html', varianti=tutte_varianti)
+    tutte_varianti = (
+        VarianteArticolo.query.join(Articolo)
+        .join(Fornitore)
+        .order_by(Fornitore.nome, Articolo.nome)
+        .all()
+    )
+    return render_template("tools.html", varianti=tutte_varianti)
+
 
 # 10. RETTIFICA RAPIDA VARIANTI
-@app.route('/tools/regola/<int:id>/<string:azione>', methods=['POST'])
+@app.route("/tools/regola/<int:id>/<string:azione>", methods=["POST"])
 def regola_magazzino(id, azione):
     variante = VarianteArticolo.query.get_or_404(id)
-    if azione == 'piu':
+    barcode_temp = variante.barcode
+
+    if azione == "piu":
         variante.giacenza += 1
-    elif azione == 'meno' and variante.giacenza > 0:
+    elif azione == "meno" and variante.giacenza > 0:
         variante.giacenza -= 1
-    elif azione == 'elimina':
+    elif azione == "elimina":
         db.session.delete(variante)
-        
+
     db.session.commit()
-    return redirect('/tools')
+
+    # 🚀 NOTIFICA AUTOMATICA A STRATOOS (SYNC RETTIFICA MANUALE)
+    nuova_giacenza = 0 if azione == "elimina" else variante.giacenza
+    aggiorna_giacenza_stratoos(barcode_temp, nuova_giacenza)
+
+    return redirect("/tools")
+
 
 # 11. ANAGRAFICA FORNITORI
-@app.route('/fornitori', methods=['GET', 'POST'])
+@app.route("/fornitori", methods=["GET", "POST"])
 def gestione_fornitori():
-    if request.method == 'POST':
-        nome = request.form['nome'].strip()
-        telefono = request.form['telefono'].strip()
-        email = request.form['email'].strip()
-        
+    if request.method == "POST":
+        nome = request.form["nome"].strip()
+        telefono = request.form["telefono"].strip()
+        email = request.form["email"].strip()
+
         nuovo_f = Fornitore(nome=nome, telefono=telefono, email=email)
         db.session.add(nuovo_f)
         db.session.commit()
-        return redirect('/fornitori')
-        
+        return redirect("/fornitori")
+
     tutti_fornitori = Fornitore.query.order_by(Fornitore.nome.asc()).all()
-    return render_template('fornitori.html', fornitori=tutti_fornitori)
+    return render_template("fornitori.html", fornitori=tutti_fornitori)
+
 
 # 12. RIMOZIONE FORNITORE
-@app.route('/fornitori/elimina/<int:id>', methods=['POST'])
+@app.route("/fornitori/elimina/<int:id>", methods=["POST"])
 def elimina_fornitore(id):
     f = Fornitore.query.get_or_404(id)
     db.session.delete(f)
     db.session.commit()
-    return redirect('/fornitori')
+    return redirect("/fornitori")
+
 
 # 13. SCHEDA REPORT TEMPORALE
-@app.route('/report', methods=['GET', 'POST'])
+@app.route("/report", methods=["GET", "POST"])
 def report_vendite():
-    data_inizio_str = date.today().strftime('%Y-%m-%d')
-    data_fine_str = date.today().strftime('%Y-%m-%d')
-    
-    if request.method == 'POST':
-        data_inizio_str = request.form['data_inizio']
-        data_fine_str = request.form['data_fine']
-        
+    data_inizio_str = date.today().strftime("%Y-%m-%d")
+    data_fine_str = date.today().strftime("%Y-%m-%d")
+
+    if request.method == "POST":
+        data_inizio_str = request.form["data_inizio"]
+        data_fine_str = request.form["data_fine"]
+
     vendite_periodo = Vendita.query.filter(
         func.date(Vendita.data_vendita) >= data_inizio_str,
-        func.date(Vendita.data_vendita) <= data_fine_str
+        func.date(Vendita.data_vendita) <= data_fine_str,
     ).all()
-    
+
     rep_incasso = sum(v.importo_totale_incassato for v in vendite_periodo)
     rep_guadagno = sum(v.importo_totale_guadagnato for v in vendite_periodo)
-    
-    dettagli_periodo = DettaglioVendita.query.join(Vendita).filter(
-        func.date(Vendita.data_vendita) >= data_inizio_str,
-        func.date(Vendita.data_vendita) <= data_fine_str
-    ).order_by(Vendita.data_vendita.desc()).all()
-    
-    rep_pezzi = sum(d.quantita for d in dettagli_periodo)
-    
-    return render_template('report.html',
-                           data_inizio=data_inizio_str,
-                           data_fine=data_fine_str,
-                           rep_pezzi=rep_pezzi,
-                           rep_incasso=rep_incasso,
-                           rep_guadagno=rep_guadagno,
-                           dettagli=dettagli_periodo)
 
-if __name__ == '__main__':
+    dettagli_periodo = (
+        DettaglioVendita.query.join(Vendita)
+        .filter(
+            func.date(Vendita.data_vendita) >= data_inizio_str,
+            func.date(Vendita.data_vendita) <= data_fine_str,
+        )
+        .order_by(Vendita.data_vendita.desc())
+        .all()
+    )
+
+    rep_pezzi = sum(d.quantita for d in dettagli_periodo)
+
+    return render_template(
+        "report.html",
+        data_inizio=data_inizio_str,
+        data_fine=data_fine_str,
+        rep_pezzi=rep_pezzi,
+        rep_incasso=rep_incasso,
+        rep_guadagno=rep_guadagno,
+        dettagli=dettagli_periodo,
+    )
+
+
+if __name__ == "__main__":
     app.run(debug=True)

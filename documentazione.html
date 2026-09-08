@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Documentazione Tecnica Integrazione E-Commerce</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        h1 {
+            color: #1a252f;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            color: #2c3e50;
+            margin-top: 30px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f8f9fa;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+
+        .badge {
+            background: #e74c3c;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Documentazione Tecnica Integrazione E-Commerce — Via Roma</h1>
+
+    <h2>1. Architettura di Sistema</h2>
+    <ul>
+        <li><strong>Backend:</strong> Python / Flask</li>
+        <li><strong>Database:</strong> SQLite (Predisposto per MySQL)</li>
+        <li><strong>Hosting:</strong> PythonAnywhere</li>
+        <li><strong>Autenticazione:</strong> Sessione Flask + Guardia `@app.before_request`</li>
+    </ul>
+
+    <h2>2. Modello Dati (Catalogo & Giacenze)</h2>
+    <table>
+        <tr>
+            <th>Entità</th>
+            <th>Modello</th>
+            <th>Descrizione e Campi Chiave</th>
+        </tr>
+        <tr>
+            <td><strong>Prodotto Padre</strong></td>
+            <td><code>Articolo</code></td>
+            <td>Modello generale (id, codice_modello, nome, prezzo_listino, tipologia)</td>
+        </tr>
+        <tr>
+            <td><strong>SKU Figlio</strong></td>
+            <td><code>VarianteArticolo</code></td>
+            <td>Articolo fisico reale (id, articolo_id, barcode, colore, taglia_numero, <strong>giacenza</strong>)</td>
+        </tr>
+    </table>
+
+    <h2>3. Endpoints API (Formato JSON)</h2>
+
+    <h3>A. Lettura Singola SKU</h3>
+    <p><code>GET /api/articolo/&lt;barcode&gt;</code></p>
+
+    <h3>B. Verifica Modello</h3>
+    <p><code>GET /api/check_modello/&lt;codice_modello&gt;</code></p>
+
+    <h3>C. Scarico Magazzino</h3>
+    <p><code>POST /api/vendi</code></p>
+    <pre>
+[
+  {
+    "variante_id": 12,
+    "prezzo_finale": 129.00
+  }
+]
+</pre>
+
+    <h2>4. Requisiti Integrativi</h2>
+    <ol>
+        <li><strong>API Key:</strong> Header <code>X-API-KEY</code> per chiamate server-to-server.</li>
+        <li><strong>Sincronizzazione:</strong> Invocazione <code>POST /api/vendi</code> ad ogni ordine e-commerce.</li>
+    </ol>
+
+</body>
+
+</html>
