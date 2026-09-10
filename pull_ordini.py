@@ -1,5 +1,14 @@
+import sys
 import os
+import time
 import requests
+
+# Imposta automaticamente la cartella di lavoro corrente sul percorso dello script
+CARTELLA_PROGETTO = os.path.dirname(os.path.abspath(__file__))
+os.chdir(CARTELLA_PROGETTO)
+if CARTELLA_PROGETTO not in sys.path:
+    sys.path.append(CARTELLA_PROGETTO)
+
 from app import app
 from database.models import db, VarianteArticolo, Vendita, DettaglioVendita
 
@@ -17,6 +26,7 @@ def controlla_nuovi_ordini_web():
         f"{BASE_URL}/auth",
         json={"apiKey": API_KEY},
         headers={"Content-Type": "application/json", "Accept": "application/json"},
+        timeout=10,
     )
     if res_auth.status_code != 200:
         print("❌ Impossibile autenticarsi su Stratoos.")
@@ -27,7 +37,7 @@ def controlla_nuovi_ordini_web():
 
     # 2. Richiesta ordini pendenti
     res_orders = requests.get(
-        f"{BASE_URL}/syncs/{SYNC_ID}/orders?status=pending", headers=headers
+        f"{BASE_URL}/syncs/{SYNC_ID}/orders?status=pending", headers=headers, timeout=10
     )
     if res_orders.status_code != 200:
         print(
@@ -80,10 +90,6 @@ def controlla_nuovi_ordini_web():
                     f"🎉 Ordine Web #{ordine.get('id')} registrato con successo nel DB locale!"
                 )
 
-
-import time  # <--- ASSICURATI DI AGGIUNGERE QUESTO IN CIMA AL FILE, DOPO 'import os'
-
-# ... (lascia intatto tutto il blocco def controlla_nuovi_ordini_web(): che c'è in mezzo) ...
 
 if __name__ == "__main__":
     print("🚀 Servizio di Polling Ordini Avviato in Background...")
