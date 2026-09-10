@@ -10,14 +10,12 @@ if CARTELLA_PROGETTO not in sys.path:
 from app import app
 from database.models import db, Articolo, VarianteArticolo, Vendita, DettaglioVendita
 
-# NOTA: Se hai altre tabelle (es. Categoria, Fornitore, MovimentoMagazzino)
-# importale qui sopra e aggiungi il comando di `.delete()` sotto.
-
 if __name__ == "__main__":
     with app.app_context():
         print(
-            "ATTENZIONE: Stai per eliminare TUTTI gli articoli, le varianti e le vendite dal database."
+            "⚠️ ATTENZIONE: Stai per eliminare TUTTI gli articoli, le varianti e le vendite di prova."
         )
+        print("I fornitori e le scadenze NON verranno toccati.")
         conferma = input(
             "Vuoi procedere? Scrivi 'SI' (tutto maiuscolo) per confermare: "
         )
@@ -26,19 +24,22 @@ if __name__ == "__main__":
             try:
                 print("🔄 Cancellazione in corso...")
 
-                # Eliminiamo prima i "figli" (vendite e varianti) per non violare le chiavi esterne
+                # Ordine di cancellazione obbligatorio per non violare i vincoli (Foreign Keys)
+                # Prima eliminiamo i dettagli delle vendite e le vendite stesse
                 DettaglioVendita.query.delete()
                 Vendita.query.delete()
+
+                # Poi eliminiamo le varianti (taglie/colori)
                 VarianteArticolo.query.delete()
 
-                # Poi eliminiamo i "padri" (gli articoli)
+                # Infine eliminiamo i modelli "padre"
                 Articolo.query.delete()
 
                 # Confermiamo le modifiche sul database
                 db.session.commit()
 
                 print(
-                    "✅ Pulizia completata! Il database è tornato vuoto e pronto per i dati reali."
+                    "✅ Pulizia completata! Catalogo e vendite azzerati con successo."
                 )
             except Exception as e:
                 db.session.rollback()
