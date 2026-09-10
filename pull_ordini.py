@@ -81,5 +81,18 @@ def controlla_nuovi_ordini_web():
                 )
 
 
+import time  # <--- ASSICURATI DI AGGIUNGERE QUESTO IN CIMA AL FILE, DOPO 'import os'
+
+# ... (lascia intatto tutto il blocco def controlla_nuovi_ordini_web(): che c'è in mezzo) ...
+
 if __name__ == "__main__":
-    controlla_nuovi_ordini_web()
+    print("🚀 Servizio di Polling Ordini Avviato in Background...")
+    while True:
+        try:
+            controlla_nuovi_ordini_web()
+        except Exception as e:
+            print(f"⚠️ Errore imprevisto durante il controllo ordini: {e}")
+
+        # Mette il demone in pausa per 15 minuti (900 secondi)
+        print("💤 Attesa 15 minuti prima del prossimo controllo...\n")
+        time.sleep(900)
