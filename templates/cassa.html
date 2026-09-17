@@ -112,6 +112,20 @@
                     return response.json();
                 })
                 .then(data => {
+                    // ⚠️ AVVISO SE LA GIACENZA È PARI A ZERO O MINORE
+                    if (data.giacenza <= 0) {
+                        let conferma = confirm(
+                            `⚠️ ATTENZIONE: "${data.nome}" (${data.colore} - Taglia ${data.taglia_numero}) risulta a GIACENZA ZERO (0 pz) nel sistema!\n\n` +
+                            `Vuoi comunque aggiungerlo alla vendita?\n` +
+                            `(Ricordati poi di effettuare la rettifica in Tools).`
+                        );
+                        if (!conferma) {
+                            msgBox.className = "alert alert-warning text-center";
+                            msgBox.innerText = `Scansione annullata: ${data.nome} è a giacenza zero.`;
+                            return;
+                        }
+                    }
+
                     // Aggiunge il prodotto al carrello locale
                     data.sconto = 0; // Sconto iniziale
                     data.prezzo_finale = data.prezzo_listino;
@@ -170,33 +184,33 @@
         }
 
         function confermaVendita() {
-                if (carrello.length === 0) {
-                    alert("Il carrello è vuoto!");
-                    return;
-                }
-
-                // Inviamo il carrello al backend Flask tramite una richiesta POST
-                fetch('/api/vendi', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(carrello)
-                })
-                    .then(response => {
-                        if (!response.ok) throw new Error('Errore durante il salvataggio della vendita');
-                        return response.json();
-                    })
-                    .then(data => {
-                        // Se il server risponde correttamente, puliamo la cassa
-                        alert(`Vendita registrata con successo! Totale incassato: € ${data.totale.toFixed(2)}`);
-                        svuotaCarrello();
-                    })
-                    .catch(error => {
-                        alert("Si è verificato un errore durante la vendita. Controlla il magazzino.");
-                        console.error(error);
-                    });
+            if (carrello.length === 0) {
+                alert("Il carrello è vuoto!");
+                return;
             }
+
+            // Inviamo il carrello al backend Flask tramite una richiesta POST
+            fetch('/api/vendi', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(carrello)
+            })
+                .then(response => {
+                    if (!response.ok) throw new Error('Errore durante il salvataggio della vendita');
+                    return response.json();
+                })
+                .then(data => {
+                    // Se il server risponde correttamente, puliamo la cassa
+                    alert(`Vendita registrata con successo! Totale incassato: € ${data.totale.toFixed(2)}`);
+                    svuotaCarrello();
+                })
+                .catch(error => {
+                    alert("Si è verificato un errore durante la vendita. Controlla il magazzino.");
+                    console.error(error);
+                });
+        }
     </script>
 
 </body>

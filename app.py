@@ -228,6 +228,7 @@ def check_modello(codice):
 
 
 # 5. API RICERCA IN CASSA
+# 5. API RICERCA IN CASSA
 @app.route("/api/articolo/<barcode>")
 def cerca_articolo(barcode):
     variante = VarianteArticolo.query.filter_by(barcode=barcode).first()
@@ -235,15 +236,22 @@ def cerca_articolo(barcode):
         return jsonify({"errore": "Articolo non trovato"}), 404
 
     articolo = variante.articolo
+    brand_nome = (
+        articolo.fornitore.nome
+        if articolo.fornitore
+        else (articolo.brand or "Sconosciuto")
+    )
+
     return jsonify(
         {
             "variante_id": variante.id,
             "nome": articolo.nome,
-            "brand": articolo.fornitore.nome,
+            "brand": brand_nome,
             "codice_modello": articolo.codice_modello,
             "colore": variante.colore,
             "taglia_numero": variante.taglia_numero,
             "prezzo_listino": articolo.prezzo_listino,
+            "giacenza": variante.giacenza,  # <--- Invia la giacenza alla cassa
         }
     )
 
