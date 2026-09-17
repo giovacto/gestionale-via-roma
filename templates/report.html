@@ -90,8 +90,15 @@
                                 <small class="font-monospace text-muted">{{ d.variante.articolo.codice_modello
                                     }}</small>
                             </td>
-                            <td><span class="badge bg-light text-dark border">{{ d.variante.articolo.fornitore.nome
-                                    }}</span></td>
+                            <td><span class="badge bg-light text-dark border">
+                                    {% if d.variante.articolo.fornitore %}
+                                    {{ d.variante.articolo.fornitore.nome }}
+                                    {% elif d.variante.articolo.brand %}
+                                    {{ d.variante.articolo.brand }}
+                                    {% else %}
+                                    Sconosciuto
+                                    {% endif %}
+                                </span></td>
                             <td><span class="badge bg-dark">{{ d.variante.colore }}</span> Taglia <strong>{{
                                     d.variante.taglia_numero }}</strong></td>
                             <td class="text-end fw-bold text-success">€ {{ "%.2f"|format(d.prezzo_singolo_venduto) }}
