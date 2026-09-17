@@ -49,17 +49,7 @@
                 <table class="table table-hover table-striped align-middle" id="tabella_magazzino">
                     <thead class="table-dark">
                         <tr>
-                            <td>
-                                <strong>{{ v.articolo.nome }}</strong><br>
-                                <small class="text-muted font-monospace">
-                                    {{ v.articolo.codice_modello }}
-                                    {% if v.articolo.fornitore %}
-                                    [{{ v.articolo.fornitore.nome }}]
-                                    {% elif v.articolo.brand %}
-                                    [{{ v.articolo.brand }}]
-                                    {% endif %}
-                                </small>
-                            </td>
+                            <th>Modello / Brand</th>
                             <th>Tipologia</th>
                             <th>Colore</th>
                             <th>Numero</th>
@@ -73,8 +63,14 @@
                         <tr>
                             <td>
                                 <strong>{{ variante.articolo.nome }}</strong><br>
-                                <small class="text-muted">{{ variante.articolo.codice_modello }} [{{
-                                    variante.articolo.brand }}]</small>
+                                <small class="text-muted font-monospace">
+                                    {{ variante.articolo.codice_modello }}
+                                    {% if variante.articolo.fornitore %}
+                                    [{{ variante.articolo.fornitore.nome }}]
+                                    {% elif variante.articolo.brand %}
+                                    [{{ variante.articolo.brand }}]
+                                    {% endif %}
+                                </small>
                             </td>
                             <td><span class="badge bg-light text-dark border">{{ variante.articolo.tipologia }}</span>
                             </td>
