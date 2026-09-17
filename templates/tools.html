@@ -49,7 +49,17 @@
                 <table class="table table-hover table-striped align-middle" id="tabella_magazzino">
                     <thead class="table-dark">
                         <tr>
-                            <th>Modello / Brand</th>
+                            <td>
+                                <strong>{{ v.articolo.nome }}</strong><br>
+                                <small class="text-muted font-monospace">
+                                    {{ v.articolo.codice_modello }}
+                                    {% if v.articolo.fornitore %}
+                                    [{{ v.articolo.fornitore.nome }}]
+                                    {% elif v.articolo.brand %}
+                                    [{{ v.articolo.brand }}]
+                                    {% endif %}
+                                </small>
+                            </td>
                             <th>Tipologia</th>
                             <th>Colore</th>
                             <th>Numero</th>
