@@ -16,7 +16,7 @@ import os
 try:
     from stratoos import aggiorna_giacenza_stratoos
 except ImportError:
-    # Funzione di riserva nel caso il file stratoos.py non sia ancora presente
+
     def aggiorna_giacenza_stratoos(barcode, giacenza):
         pass
 
@@ -39,26 +39,20 @@ with app.app_context():
 # 🛡️ SCUDO DI PROTEZIONE: CONTROLLO LOGIN AUTOMATICO SU OGNI PAGINA
 @app.before_request
 def blinda_pagine():
-    # Elenco delle rotte libere che non richiedono di essere loggati
     rotte_libere = ["login", "static"]
-
-    # Se l'utente sta andando sul login o sui file CSS/JS, lascialo passare
     if request.endpoint in rotte_libere or request.path.startswith("/static/"):
         return
-
-    # Se nella sessione del browser non c'è il pass di login, rimbalzalo al modulo d'accesso
     if not session.get("loggato"):
         return redirect("/login")
 
 
-# 🔓 ROTTA DI LOGIN (VERIFICA CREDENZIALI STATICHE)
+# 🔓 ROTTA DI LOGIN
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         username = request.form["username"].strip()
         password = request.form["password"].strip()
 
-        # Controllo statico richiesto
         if username == "admin" and password == "Loredanalo":
             session["loggato"] = True
             return redirect("/")
@@ -68,7 +62,7 @@ def login():
     return render_template("login.html")
 
 
-# 🔒 ROTTA DI LOGOUT (CANCELLA IL PASS)
+# 🔒 ROTTA DI LOGOUT
 @app.route("/logout")
 def logout():
     session.pop("loggato", None)
@@ -145,13 +139,11 @@ def carico_merci():
             db.session.commit()
             msg_successo = f"Nuovo modello '{nome}' registrato! "
         else:
-            articolo.nome = nome
-            articolo.fornitore_id = fornitore_id
-            articolo.tipologia = tipologia
-            articolo.prezzo_acquisto = prezzo_acquisto
-            articolo.ricarico_percentuale = ricarico_percentuale
-            articolo.prezzo_listino = prezzo_listino
-            msg_successo = f"Modello '{articolo.nome}' esistente aggiornato! "
+            # 🛡️ PROTEZIONE: Se il modello esiste già, NON sovrascriviamo nome o prezzi.
+            # Aggiungiamo unicamente le nuove varianti inserite.
+            msg_successo = (
+                f"Aggiunte nuove varianti al modello esistente '{articolo.nome}'! "
+            )
 
         conteggio_inseriti = 0
         varianti_caricate = []
@@ -228,7 +220,6 @@ def check_modello(codice):
 
 
 # 5. API RICERCA IN CASSA
-# 5. API RICERCA IN CASSA
 @app.route("/api/articolo/<barcode>")
 def cerca_articolo(barcode):
     variante = VarianteArticolo.query.filter_by(barcode=barcode).first()
@@ -251,7 +242,7 @@ def cerca_articolo(barcode):
             "colore": variante.colore,
             "taglia_numero": variante.taglia_numero,
             "prezzo_listino": articolo.prezzo_listino,
-            "giacenza": variante.giacenza,  # <--- Invia la giacenza alla cassa
+            "giacenza": variante.giacenza,
         }
     )
 
@@ -297,7 +288,6 @@ def elabora_vendita():
     db.session.add(nuova_vendita)
     db.session.commit()
 
-    # 🚀 NOTIFICA AUTOMATICA A STRATOOS (SYNC CASSA)
     for v in varianti_da_sincronizzare:
         aggiorna_giacenza_stratoos(v.barcode, v.giacenza)
 
@@ -374,7 +364,6 @@ def regola_magazzino(id, azione):
 
     db.session.commit()
 
-    # 🚀 NOTIFICA AUTOMATICA A STRATOOS (SYNC RETTIFICA MANUALE)
     nuova_giacenza = 0 if azione == "elimina" else variante.giacenza
     aggiorna_giacenza_stratoos(barcode_temp, nuova_giacenza)
 

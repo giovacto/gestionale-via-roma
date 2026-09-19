@@ -50,9 +50,9 @@
         {% endwith %}
 
         <div id="alert_esistente" class="alert alert-warning d-none shadow-sm" role="alert">
-            <h5>⚠️ MODELLO GIÀ PRESENTE IN INTEGRATO!</h5>
-            <p class="mb-2">Questo modello è già registrato. Sotto puoi vedere le giacenze attuali. Inserisci nelle
-                caselle solo le <strong>nuove quantità</strong> arrivate per aggiornare l'inventario.</p>
+            <h5>🔒 MODELLO GIÀ PRESENTE IN ARCHIVIO!</h5>
+            <p class="mb-2">I dati principali del prodotto sono stati bloccati per sicurezza. Sotto trovi le giacenze
+                attuali. Inserisci in basso solo le <strong>nuove taglie/colori</strong> arrivate.</p>
             <div class="table-responsive bg-white rounded p-2">
                 <table class="table table-sm table-bordered mb-0 align-middle">
                     <thead class="table-dark">
@@ -202,7 +202,7 @@
             }
         }
 
-        // CONTROLLO AJAX IN TEMPO REALE SUL CODICE MODELLO
+        // CONTROLLO AJAX IN TEMPO REALE SUL CODICE MODELLO CON BLOCCO DATI
         document.getElementById('codice_modello').addEventListener('change', function () {
             let codice = this.value.trim();
             if (!codice) return;
@@ -213,13 +213,33 @@
                     let alertBox = document.getElementById('alert_esistente');
                     let tbody = document.getElementById('tabella_giacenze_esistenti');
 
-                    if (data.esiste) {
-                        document.getElementById('nome').value = data.nome;
-                        document.getElementById('fornitore_id').value = data.fornitore_id;
-                        document.getElementById('tipologia').value = data.tipologia;
-                        document.getElementById('prezzo_acquisto').value = data.prezzo_acquisto;
-                        document.getElementById('ricarico_percentuale').value = data.ricarico_percentuale;
+                    let inputNome = document.getElementById('nome');
+                    let inputFornitore = document.getElementById('fornitore_id');
+                    let inputTipologia = document.getElementById('tipologia');
+                    let inputAcquisto = document.getElementById('prezzo_acquisto');
+                    let inputRicarico = document.getElementById('ricarico_percentuale');
 
+                    if (data.esiste) {
+                        // 1. Popola i dati dell'articolo esistente
+                        inputNome.value = data.nome;
+                        inputFornitore.value = data.fornitore_id;
+                        inputTipologia.value = data.tipologia;
+                        inputAcquisto.value = data.prezzo_acquisto;
+                        inputRicarico.value = data.ricarico_percentuale;
+
+                        // 2. Blocca i campi per impedire sovrascritture accidentali
+                        inputNome.readOnly = true;
+                        inputAcquisto.readOnly = true;
+                        inputRicarico.readOnly = true;
+                        inputFornitore.style.pointerEvents = 'none';
+                        inputTipologia.style.pointerEvents = 'none';
+
+                        // Applica lo sfondo grigio chiaro per evidenziare il blocco
+                        [inputNome, inputFornitore, inputTipologia, inputAcquisto, inputRicarico].forEach(el => {
+                            el.classList.add('bg-light');
+                        });
+
+                        // 3. Popola la tabella con le giacenze già presenti
                         tbody.innerHTML = '';
                         data.varianti.forEach(v => {
                             let riga = `<tr>
@@ -233,37 +253,41 @@
 
                         alertBox.classList.remove('d-none');
                     } else {
+                        // Sblocca i campi se si tratta di un codice modello nuovo
+                        inputNome.readOnly = false;
+                        inputAcquisto.readOnly = false;
+                        inputRicarico.readOnly = false;
+                        inputFornitore.style.pointerEvents = 'auto';
+                        inputTipologia.style.pointerEvents = 'auto';
+
+                        [inputNome, inputFornitore, inputTipologia, inputAcquisto, inputRicarico].forEach(el => {
+                            el.classList.remove('bg-light');
+                        });
+
                         alertBox.classList.add('d-none');
                     }
                 });
         });
 
-        // 🌟 CONTROLLO IN TEMPO REALE SUI CODICI A BARRE (EVITA ERRORI)
+        // 🌟 CONTROLLO IN TEMPO REALE SUI CODICI A BARRE (EVITA DUPLICATI)
         document.getElementById('contenitore_varianti').addEventListener('change', function (e) {
-            // Intercettiamo il cambio di testo solo sui campi che si chiamano 'barcode[]'
             if (e.target && e.target.name === 'barcode[]') {
                 let barcodeDigitato = e.target.value.trim();
                 if (!barcodeDigitato) return;
 
                 let campoInput = e.target;
 
-                // Interroghiamo l'API interna per verificare se questo specifico barcode esiste già
                 fetch(`/api/articolo/${barcodeDigitato}`)
                     .then(response => {
-                        if (response.ok) {
-                            // Se la risposta è OK (200), l'articolo esiste già nel database!
-                            return response.json();
-                        }
+                        if (response.ok) return response.json();
                         return null;
                     })
                     .then(data => {
                         if (data) {
-                            // Blocca l'operatore con un pop-up chiaro
                             alert(`⚠️ ATTENTO! Il codice a barre [ ${barcodeDigitato} ] è già stato caricato nel sistema!\n\n` +
                                 `Articolo associato: ${data.nome} (${data.colore} - Num. ${data.taglia_numero})\n\n` +
                                 `Se devi aggiungere paia a questo codice, digitalo nella casella del modello principale o usa il menu TOOLS.`);
 
-                            // Svuota immediatamente la casella per obbligare alla correzione
                             campoInput.value = '';
                             campoInput.focus();
                         }
