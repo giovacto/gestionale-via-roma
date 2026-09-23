@@ -144,8 +144,13 @@
                             </div>
                             <div class="col-12 col-md-4">
                                 <label class="form-label small">Codice a Barre (Barcode)</label>
-                                <input type="text" name="barcode[]" class="form-control border-warning"
-                                    placeholder="Spara col lettore" required autocomplete="off">
+                                <div class="input-group">
+                                    <input type="text" name="barcode[]" class="form-control border-warning"
+                                        placeholder="Spara col lettore" required autocomplete="off">
+                                    <button type="button" class="btn btn-outline-dark fw-bold"
+                                        onclick="generaBarcodeInterno(this)" title="Crea un codice interno automatico">⚡
+                                        Genera</button>
+                                </div>
                             </div>
                             <div class="col-12 col-md-1 text-end">
                                 <button type="button" class="btn btn-danger w-100"
@@ -165,6 +170,12 @@
     </div>
 
     <script>
+        function generaBarcodeInterno(bottone) {
+            let inputBarcode = bottone.closest('.input-group').querySelector('input[name="barcode[]"]');
+            let codiceCasuale = 'VR' + Math.floor(100000 + Math.random() * 900000);
+            inputBarcode.value = codiceCasuale;
+        }
+
         function aggiungiRigaVariante() {
             let container = document.getElementById('contenitore_varianti');
             let ultimiColori = document.getElementsByName('colore[]');
@@ -183,7 +194,10 @@
             <input type="number" name="giacenza[]" class="form-control" value="1" min="0" required>
         </div>
         <div class="col-12 col-md-4">
-            <input type="text" name="barcode[]" class="form-control border-warning" placeholder="Spara col lettore" required autocomplete="off">
+            <div class="input-group">
+                <input type="text" name="barcode[]" class="form-control border-warning" placeholder="Spara col lettore" required autocomplete="off">
+                <button type="button" class="btn btn-outline-dark fw-bold" onclick="generaBarcodeInterno(this)" title="Crea un codice interno automatico">⚡ Genera</button>
+            </div>
         </div>
         <div class="col-12 col-md-1 text-end">
             <button type="button" class="btn btn-danger w-100" onclick="rimuoviRiga(this)">🗑️</button>
@@ -202,7 +216,6 @@
             }
         }
 
-        // CONTROLLO AJAX IN TEMPO REALE SUL CODICE MODELLO CON BLOCCO DATI
         document.getElementById('codice_modello').addEventListener('change', function () {
             let codice = this.value.trim();
             if (!codice) return;
@@ -220,26 +233,22 @@
                     let inputRicarico = document.getElementById('ricarico_percentuale');
 
                     if (data.esiste) {
-                        // 1. Popola i dati dell'articolo esistente
                         inputNome.value = data.nome;
                         inputFornitore.value = data.fornitore_id;
                         inputTipologia.value = data.tipologia;
                         inputAcquisto.value = data.prezzo_acquisto;
                         inputRicarico.value = data.ricarico_percentuale;
 
-                        // 2. Blocca i campi per impedire sovrascritture accidentali
                         inputNome.readOnly = true;
                         inputAcquisto.readOnly = true;
                         inputRicarico.readOnly = true;
                         inputFornitore.style.pointerEvents = 'none';
                         inputTipologia.style.pointerEvents = 'none';
 
-                        // Applica lo sfondo grigio chiaro per evidenziare il blocco
                         [inputNome, inputFornitore, inputTipologia, inputAcquisto, inputRicarico].forEach(el => {
                             el.classList.add('bg-light');
                         });
 
-                        // 3. Popola la tabella con le giacenze già presenti
                         tbody.innerHTML = '';
                         data.varianti.forEach(v => {
                             let riga = `<tr>
@@ -253,7 +262,6 @@
 
                         alertBox.classList.remove('d-none');
                     } else {
-                        // Sblocca i campi se si tratta di un codice modello nuovo
                         inputNome.readOnly = false;
                         inputAcquisto.readOnly = false;
                         inputRicarico.readOnly = false;
@@ -269,7 +277,6 @@
                 });
         });
 
-        // 🌟 CONTROLLO IN TEMPO REALE SUI CODICI A BARRE (EVITA DUPLICATI)
         document.getElementById('contenitore_varianti').addEventListener('change', function (e) {
             if (e.target && e.target.name === 'barcode[]') {
                 let barcodeDigitato = e.target.value.trim();

@@ -37,7 +37,13 @@
             <!-- COLONNA SINISTRA: LETTORE E TABELLA -->
             <div class="col-12 col-lg-8">
                 <div class="card shadow-sm p-4 mb-4">
-                    <h3 class="h5 text-secondary text-uppercase mb-3">1. Scansiona Articolo</h3>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h3 class="h5 text-secondary text-uppercase mb-0">1. Scansiona Articolo</h3>
+                        <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#modalRicerca"
+                            onclick="setTimeout(() => document.getElementById('input_ricerca_manuale').focus(), 400)">
+                            🔍 Cerca Prodotto Senza Barcode
+                        </button>
+                    </div>
                     <input type="text" id="barcode_field" class="form-control barcode-input mb-3"
                         placeholder="SPARA QUI COL LETTORE" autocomplete="off">
                     <div id="status_message" class="alert alert-info text-center mb-0">
@@ -59,7 +65,6 @@
                                 </tr>
                             </thead>
                             <tbody id="carrello_tbody">
-                                <!-- I prodotti scansionati compariranno qui dinamicamente -->
                             </tbody>
                         </table>
                     </div>
@@ -88,21 +93,57 @@
         </div>
     </div>
 
+    <!-- MODAL DI RICERCA MANUALE -->
+    <div class="modal fade" id="modalRicerca" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold">🔍 Ricerca Manuale Prodotto (Senza Barcode)</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="text" id="input_ricerca_manuale" class="form-control form-control-lg mb-3"
+                        placeholder="Digita Nome Prodotto, Marca, Modello o Colore..." onkeyup="eseguiRicercaManuale()">
+
+                    <div class="table-responsive" style="max-height: 350px;">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Prodotto</th>
+                                    <th>Variante</th>
+                                    <th>Giacenza</th>
+                                    <th>Prezzo</th>
+                                    <th class="text-end">Azione</th>
+                                </tr>
+                            </thead>
+                            <tbody id="risultati_ricerca_tbody">
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-4">Inizia a digitare per cercare
+                                        tra i prodotti in magazzino...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let carrello = [];
 
-        // Intercetta l'invio del lettore barcode
         document.getElementById('barcode_field').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') {
                 let barcode = this.value.trim();
                 if (barcode) {
                     cercaProdotto(barcode);
                 }
-                this.value = ''; // Pulisce il campo per la prossima scansione
+                this.value = '';
             }
         });
 
-        // Chiamata AJAX al server Flask
         function cercaProdotto(barcode) {
             let msgBox = document.getElementById('status_message');
 
@@ -112,29 +153,7 @@
                     return response.json();
                 })
                 .then(data => {
-                    // ⚠️ AVVISO SE LA GIACENZA È PARI A ZERO O MINORE
-                    if (data.giacenza <= 0) {
-                        let conferma = confirm(
-                            `⚠️ ATTENZIONE: "${data.nome}" (${data.colore} - Taglia ${data.taglia_numero}) risulta a GIACENZA ZERO (0 pz) nel sistema!\n\n` +
-                            `Vuoi comunque aggiungerlo alla vendita?\n` +
-                            `(Ricordati poi di effettuare la rettifica in Tools).`
-                        );
-                        if (!conferma) {
-                            msgBox.className = "alert alert-warning text-center";
-                            msgBox.innerText = `Scansione annullata: ${data.nome} è a giacenza zero.`;
-                            return;
-                        }
-                    }
-
-                    // Aggiunge il prodotto al carrello locale
-                    data.sconto = 0; // Sconto iniziale
-                    data.prezzo_finale = data.prezzo_listino;
-                    carrello.push(data);
-
-                    msgBox.className = "alert alert-success text-center";
-                    msgBox.innerText = `Inserito: ${data.nome} (${data.colore} - Taglia ${data.taglia_numero})`;
-
-                    aggiornaInterfaccia();
+                    aggiungiAProdottoCarrello(data);
                 })
                 .catch(error => {
                     msgBox.className = "alert alert-danger text-center";
@@ -142,7 +161,75 @@
                 });
         }
 
-        // Aggiorna la tabella e il totale globale
+        function aggiungiAProdottoCarrello(data) {
+            let msgBox = document.getElementById('status_message');
+
+            if (data.giacenza <= 0) {
+                let conferma = confirm(
+                    `⚠️ ATTENZIONE: "${data.nome}" (${data.colore} - Taglia ${data.taglia_numero}) risulta a GIACENZA ZERO (0 pz) nel sistema!\n\n` +
+                    `Vuoi comunque aggiungerlo alla vendita?\n` +
+                    `(Ricordati poi di effettuare la rettifica in Tools).`
+                );
+                if (!conferma) {
+                    msgBox.className = "alert alert-warning text-center";
+                    msgBox.innerText = `Scansione annullata: ${data.nome} è a giacenza zero.`;
+                    return;
+                }
+            }
+
+            data.sconto = 0;
+            data.prezzo_finale = data.prezzo_listino;
+            carrello.push(data);
+
+            msgBox.className = "alert alert-success text-center";
+            msgBox.innerText = `Inserito: ${data.nome} (${data.colore} - Taglia ${data.taglia_numero})`;
+
+            aggiornaInterfaccia();
+        }
+
+        function eseguiRicercaManuale() {
+            let query = document.getElementById('input_ricerca_manuale').value.trim();
+            let tbody = document.getElementById('risultati_ricerca_tbody');
+
+            if (query.length < 2) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Inizia a digitare per cercare tra i prodotti in magazzino...</td></tr>';
+                return;
+            }
+
+            fetch(`/api/cerca_prodotti_cassa?q=${encodeURIComponent(query)}`)
+                .then(res => res.json())
+                .then(dati => {
+                    tbody.innerHTML = '';
+                    if (dati.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Nessun prodotto trovato.</td></tr>';
+                        return;
+                    }
+
+                    dati.forEach(item => {
+                        let riga = document.createElement('tr');
+                        riga.innerHTML = `
+                            <td><strong>${item.nome}</strong><br><small class="text-muted">${item.codice_modello} [${item.brand}]</small></td>
+                            <td><span class="badge bg-dark">${item.colore}</span> <span class="badge bg-secondary">T. ${item.taglia_numero}</span></td>
+                            <td><span class="${item.giacenza <= 0 ? 'badge bg-danger' : 'badge bg-success'}">${item.giacenza} pz</span></td>
+                            <td class="fw-bold">€ ${item.prezzo_listino.toFixed(2)}</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-success fw-bold" onclick='selezionaDaRicerca(${JSON.stringify(item)})'>➕ Inserisci</button>
+                            </td>
+                        `;
+                        tbody.appendChild(riga);
+                    });
+                });
+        }
+
+        function selezionaDaRicerca(item) {
+            let modalEl = document.getElementById('modalRicerca');
+            let modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) modal.hide();
+
+            aggiungiAProdottoCarrello(item);
+            document.getElementById('barcode_field').focus();
+        }
+
         function aggiornaInterfaccia() {
             let tbody = document.getElementById('carrello_tbody');
             tbody.innerHTML = '';
@@ -189,7 +276,6 @@
                 return;
             }
 
-            // Inviamo il carrello al backend Flask tramite una richiesta POST
             fetch('/api/vendi', {
                 method: 'POST',
                 headers: {
@@ -202,7 +288,6 @@
                     return response.json();
                 })
                 .then(data => {
-                    // Se il server risponde correttamente, puliamo la cassa
                     alert(`Vendita registrata con successo! Totale incassato: € ${data.totale.toFixed(2)}`);
                     svuotaCarrello();
                 })

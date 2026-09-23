@@ -12,7 +12,6 @@ from datetime import datetime, date
 from sqlalchemy import func
 import os
 
-# 🚀 IMPORTAZIONE MODULO STRATOOS PER SYNC E-COMMERCE
 try:
     from stratoos import aggiorna_giacenza_stratoos
 except ImportError:
@@ -36,7 +35,6 @@ with app.app_context():
     db.create_all()
 
 
-# 🛡️ SCUDO DI PROTEZIONE: CONTROLLO LOGIN AUTOMATICO SU OGNI PAGINA
 @app.before_request
 def blinda_pagine():
     rotte_libere = ["login", "static"]
@@ -46,7 +44,6 @@ def blinda_pagine():
         return redirect("/login")
 
 
-# 🔓 ROTTA DI LOGIN
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -62,7 +59,6 @@ def login():
     return render_template("login.html")
 
 
-# 🔒 ROTTA DI LOGOUT
 @app.route("/logout")
 def logout():
     session.pop("loggato", None)
@@ -70,7 +66,6 @@ def logout():
     return redirect("/login")
 
 
-# 1. DASHBOARD PRINCIPALE
 @app.route("/")
 def dashboard():
     scadenze_attive = Scadenza.query.filter_by(pagato=False).count()
@@ -97,13 +92,11 @@ def dashboard():
     )
 
 
-# 2. PUNTO CASSA
 @app.route("/cassa")
 def cassa():
     return render_template("cassa.html")
 
 
-# 3. INTERFACCIA CARICO MERCI
 @app.route("/carico", methods=["GET", "POST"])
 def carico_merci():
     if request.method == "POST":
@@ -139,8 +132,6 @@ def carico_merci():
             db.session.commit()
             msg_successo = f"Nuovo modello '{nome}' registrato! "
         else:
-            # 🛡️ PROTEZIONE: Se il modello esiste già, NON sovrascriviamo nome o prezzi.
-            # Aggiungiamo unicamente le nuove varianti inserite.
             msg_successo = (
                 f"Aggiunte nuove varianti al modello esistente '{articolo.nome}'! "
             )
@@ -177,7 +168,6 @@ def carico_merci():
 
         db.session.commit()
 
-        # 🚀 NOTIFICA AUTOMATICA A STRATOOS (SYNC CARICO MERCI)
         for v in varianti_caricate:
             aggiorna_giacenza_stratoos(v.barcode, v.giacenza)
 
@@ -188,7 +178,6 @@ def carico_merci():
     return render_template("carico.html", fornitori=lista_fornitori)
 
 
-# 4. API VERIFICA MODELLO
 @app.route("/api/check_modello/<codice>")
 def check_modello(codice):
     articolo = Articolo.query.filter_by(codice_modello=codice.strip()).first()
@@ -219,7 +208,6 @@ def check_modello(codice):
     )
 
 
-# 5. API RICERCA IN CASSA
 @app.route("/api/articolo/<barcode>")
 def cerca_articolo(barcode):
     variante = VarianteArticolo.query.filter_by(barcode=barcode).first()
@@ -247,7 +235,50 @@ def cerca_articolo(barcode):
     )
 
 
-# 6. API CHIUDI VENDITA
+# 🔍 API RICERCA MANUALE PRODOTTI IN CASSA
+@app.route("/api/cerca_prodotti_cassa")
+def cerca_prodotti_cassa():
+    query = request.args.get("q", "").strip()
+    if not query or len(query) < 2:
+        return jsonify([])
+
+    varianti = (
+        VarianteArticolo.query.join(Articolo)
+        .outerjoin(Fornitore)
+        .filter(
+            (Articolo.nome.ilike(f"%{query}%"))
+            | (Articolo.codice_modello.ilike(f"%{query}%"))
+            | (Fornitore.nome.ilike(f"%{query}%"))
+            | (VarianteArticolo.colore.ilike(f"%{query}%"))
+            | (VarianteArticolo.barcode.ilike(f"%{query}%"))
+        )
+        .limit(25)
+        .all()
+    )
+
+    risultati = []
+    for v in varianti:
+        art = v.articolo
+        brand_nome = (
+            art.fornitore.nome if art.fornitore else (art.brand or "Sconosciuto")
+        )
+        risultati.append(
+            {
+                "variante_id": v.id,
+                "nome": art.nome,
+                "brand": brand_nome,
+                "codice_modello": art.codice_modello,
+                "colore": v.colore,
+                "taglia_numero": v.taglia_numero,
+                "prezzo_listino": art.prezzo_listino,
+                "giacenza": v.giacenza,
+                "barcode": v.barcode,
+            }
+        )
+
+    return jsonify(risultati)
+
+
 @app.route("/api/vendi", methods=["POST"])
 def elabora_vendita():
     dati_carrello = request.json
@@ -294,7 +325,6 @@ def elabora_vendita():
     return jsonify({"successo": True, "totale": importo_totale_incassato})
 
 
-# 7. SCADENZIARIO
 @app.route("/scadenziario", methods=["GET", "POST"])
 def scadenziario():
     if request.method == "POST":
@@ -327,7 +357,6 @@ def scadenziario():
     )
 
 
-# 8. MARCA SCADENZA PAGATA
 @app.route("/scadenziario/paga/<int:id>", methods=["POST"])
 def paga_scadenza(id):
     scadenza = Scadenza.query.get(id)
@@ -337,7 +366,6 @@ def paga_scadenza(id):
     return redirect("/scadenziario")
 
 
-# 9. INVENTARIO COMPLETO (TOOLS)
 @app.route("/tools")
 def tools():
     tutte_varianti = (
@@ -349,7 +377,6 @@ def tools():
     return render_template("tools.html", varianti=tutte_varianti)
 
 
-# 10. RETTIFICA RAPIDA VARIANTI
 @app.route("/tools/regola/<int:id>/<string:azione>", methods=["POST"])
 def regola_magazzino(id, azione):
     variante = VarianteArticolo.query.get_or_404(id)
@@ -357,20 +384,40 @@ def regola_magazzino(id, azione):
 
     if azione == "piu":
         variante.giacenza += 1
+        db.session.commit()
+        aggiorna_giacenza_stratoos(barcode_temp, variante.giacenza)
+        flash(f"➕ Giacenza aumentata per il barcode {variante.barcode}.", "success")
+
     elif azione == "meno" and variante.giacenza > 0:
         variante.giacenza -= 1
+        db.session.commit()
+        aggiorna_giacenza_stratoos(barcode_temp, variante.giacenza)
+        flash(f"➖ Giacenza ridotta per il barcode {variante.barcode}.", "info")
+
     elif azione == "elimina":
-        db.session.delete(variante)
+        ha_vendite = DettaglioVendita.query.filter_by(variante_id=variante.id).first()
 
-    db.session.commit()
-
-    nuova_giacenza = 0 if azione == "elimina" else variante.giacenza
-    aggiorna_giacenza_stratoos(barcode_temp, nuova_giacenza)
+        if ha_vendite:
+            variante.giacenza = 0
+            db.session.commit()
+            aggiorna_giacenza_stratoos(barcode_temp, 0)
+            flash(
+                "⚠️ Questo articolo fa parte dello storico vendite: la giacenza è stata azzerata a 0 pz.",
+                "warning",
+            )
+        else:
+            try:
+                db.session.delete(variante)
+                db.session.commit()
+                aggiorna_giacenza_stratoos(barcode_temp, 0)
+                flash("🗑️ Articolo eliminato definitivamente dal magazzino.", "success")
+            except Exception as e:
+                db.session.rollback()
+                flash(f"❌ Errore durante l'eliminazione: {e}", "danger")
 
     return redirect("/tools")
 
 
-# 11. ANAGRAFICA FORNITORI
 @app.route("/fornitori", methods=["GET", "POST"])
 def gestione_fornitori():
     if request.method == "POST":
@@ -387,7 +434,6 @@ def gestione_fornitori():
     return render_template("fornitori.html", fornitori=tutti_fornitori)
 
 
-# 12. RIMOZIONE FORNITORE
 @app.route("/fornitori/elimina/<int:id>", methods=["POST"])
 def elimina_fornitore(id):
     f = Fornitore.query.get_or_404(id)
@@ -396,7 +442,6 @@ def elimina_fornitore(id):
     return redirect("/fornitori")
 
 
-# 13. SCHEDA REPORT TEMPORALE
 @app.route("/report", methods=["GET", "POST"])
 def report_vendite():
     data_inizio_str = date.today().strftime("%Y-%m-%d")
