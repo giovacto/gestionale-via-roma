@@ -16,7 +16,9 @@ try:
     from stratoos import aggiorna_giacenza_stratoos, crea_prodotto_stratoos
 except ImportError:
 
-    def aggiorna_giacenza_stratoos(barcode, giacenza):
+    def aggiorna_giacenza_stratoos(
+        barcode, giacenza, product_id=None, product_child_id=None
+    ):
         pass
 
     def crea_prodotto_stratoos(codice_modello, nome_articolo, prezzo_listino):
@@ -110,7 +112,6 @@ def carico_merci():
         prezzo_acquisto = float(request.form["prezzo_acquisto"])
         ricarico_percentuale = float(request.form.get("ricarico_percentuale", 100))
 
-        # Gestione doppio inserimento prezzo (Listino forzato o Calcolato)
         prezzo_listino_input = request.form.get("prezzo_listino", "").strip()
         if prezzo_listino_input:
             prezzo_listino = float(prezzo_listino_input)
@@ -142,8 +143,11 @@ def carico_merci():
             )
             db.session.add(articolo)
             db.session.commit()
-            # 🌐 CREA LA SCHEDA MODELLO SU STRATOOS
-            crea_prodotto_stratoos(codice_modello, nome, prezzo_listino)
+
+            p_id = crea_prodotto_stratoos(codice_modello, nome, prezzo_listino)
+            if p_id:
+                articolo.stratoos_id = p_id
+                db.session.commit()
 
             msg_successo = (
                 f"Nuovo modello '{nome}' registrato su Gestionale e Stratoos! "
@@ -186,7 +190,12 @@ def carico_merci():
         db.session.commit()
 
         for v in varianti_caricate:
-            aggiorna_giacenza_stratoos(v.barcode, v.giacenza)
+            aggiorna_giacenza_stratoos(
+                v.barcode,
+                v.giacenza,
+                product_id=articolo.stratoos_id,
+                product_child_id=v.stratoos_child_id,
+            )
 
         flash(f"⚓ {msg_successo} Movimentati {conteggio_inseriti} pezzi.", "success")
         return redirect("/carico")
@@ -337,7 +346,12 @@ def elabora_vendita():
     db.session.commit()
 
     for v in varianti_da_sincronizzare:
-        aggiorna_giacenza_stratoos(v.barcode, v.giacenza)
+        aggiorna_giacenza_stratoos(
+            v.barcode,
+            v.giacenza,
+            product_id=v.articolo.stratoos_id,
+            product_child_id=v.stratoos_child_id,
+        )
 
     return jsonify({"successo": True, "totale": importo_totale_incassato})
 
@@ -397,7 +411,6 @@ def tools():
     )
 
 
-# ✏️ NUOVA ROTTA: MODIFICA COMPLETA ARTICOLO / VARIANTE
 @app.route("/tools/modifica/<int:id>", methods=["POST"])
 def modifica_variante(id):
     variante = VarianteArticolo.query.get_or_404(id)
@@ -421,7 +434,12 @@ def modifica_variante(id):
     variante.giacenza = int(request.form["giacenza"])
 
     db.session.commit()
-    aggiorna_giacenza_stratoos(variante.barcode, variante.giacenza)
+    aggiorna_giacenza_stratoos(
+        variante.barcode,
+        variante.giacenza,
+        product_id=articolo.stratoos_id,
+        product_child_id=variante.stratoos_child_id,
+    )
 
     flash(
         f"✏️ Prodotto '{articolo.nome}' (Taglia {variante.taglia_numero}) aggiornato correttamente!",
@@ -438,13 +456,23 @@ def regola_magazzino(id, azione):
     if azione == "piu":
         variante.giacenza += 1
         db.session.commit()
-        aggiorna_giacenza_stratoos(barcode_temp, variante.giacenza)
+        aggiorna_giacenza_stratoos(
+            barcode_temp,
+            variante.giacenza,
+            product_id=variante.articolo.stratoos_id,
+            product_child_id=variante.stratoos_child_id,
+        )
         flash(f"➕ Giacenza aumentata per il barcode {variante.barcode}.", "success")
 
     elif azione == "meno" and variante.giacenza > 0:
         variante.giacenza -= 1
         db.session.commit()
-        aggiorna_giacenza_stratoos(barcode_temp, variante.giacenza)
+        aggiorna_giacenza_stratoos(
+            barcode_temp,
+            variante.giacenza,
+            product_id=variante.articolo.stratoos_id,
+            product_child_id=variante.stratoos_child_id,
+        )
         flash(f"➖ Giacenza ridotta per il barcode {variante.barcode}.", "info")
 
     elif azione == "elimina":
@@ -453,7 +481,12 @@ def regola_magazzino(id, azione):
         if ha_vendite:
             variante.giacenza = 0
             db.session.commit()
-            aggiorna_giacenza_stratoos(barcode_temp, 0)
+            aggiorna_giacenza_stratoos(
+                barcode_temp,
+                0,
+                product_id=variante.articolo.stratoos_id,
+                product_child_id=variante.stratoos_child_id,
+            )
             flash(
                 "⚠️ Questo articolo fa parte dello storico vendite: la giacenza è stata azzerata a 0 pz.",
                 "warning",
@@ -462,7 +495,12 @@ def regola_magazzino(id, azione):
             try:
                 db.session.delete(variante)
                 db.session.commit()
-                aggiorna_giacenza_stratoos(barcode_temp, 0)
+                aggiorna_giacenza_stratoos(
+                    barcode_temp,
+                    0,
+                    product_id=variante.articolo.stratoos_id,
+                    product_child_id=variante.stratoos_child_id,
+                )
                 flash("🗑️ Articolo eliminato definitivamente dal magazzino.", "success")
             except Exception as e:
                 db.session.rollback()
