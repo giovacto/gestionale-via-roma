@@ -13,10 +13,13 @@ from sqlalchemy import func
 import os
 
 try:
-    from stratoos import aggiorna_giacenza_stratoos
+    from stratoos import aggiorna_giacenza_stratoos, crea_prodotto_stratoos
 except ImportError:
 
     def aggiorna_giacenza_stratoos(barcode, giacenza):
+        pass
+
+    def crea_prodotto_stratoos(codice_modello, nome_articolo, prezzo_listino):
         pass
 
 
@@ -139,7 +142,12 @@ def carico_merci():
             )
             db.session.add(articolo)
             db.session.commit()
-            msg_successo = f"Nuovo modello '{nome}' registrato! "
+            # 🌐 CREA LA SCHEDA MODELLO SU STRATOOS
+            crea_prodotto_stratoos(codice_modello, nome, prezzo_listino)
+
+            msg_successo = (
+                f"Nuovo modello '{nome}' registrato su Gestionale e Stratoos! "
+            )
         else:
             msg_successo = (
                 f"Aggiunte nuove varianti al modello esistente '{articolo.nome}'! "
