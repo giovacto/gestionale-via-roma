@@ -525,6 +525,19 @@ def gestione_fornitori():
     return render_template("fornitori.html", fornitori=tutti_fornitori)
 
 
+# ✏️ NUOVA ROTTA: MODIFICA FORNITORE
+@app.route("/fornitori/modifica/<int:id>", methods=["POST"])
+def modifica_fornitore(id):
+    f = Fornitore.query.get_or_404(id)
+    f.nome = request.form["nome"].strip()
+    f.telefono = request.form["telefono"].strip()
+    f.email = request.form["email"].strip()
+
+    db.session.commit()
+    flash(f"✏️ Fornitore '{f.nome}' aggiornato correttamente!", "success")
+    return redirect("/fornitori")
+
+
 @app.route("/fornitori/elimina/<int:id>", methods=["POST"])
 def elimina_fornitore(id):
     f = Fornitore.query.get_or_404(id)
