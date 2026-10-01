@@ -105,16 +105,25 @@ def carico_merci():
         fornitore_id = int(request.form["fornitore_id"])
         tipologia = request.form["tipologia"]
         prezzo_acquisto = float(request.form["prezzo_acquisto"])
-        ricarico_percentuale = float(request.form["ricarico_percentuale"])
+        ricarico_percentuale = float(request.form.get("ricarico_percentuale", 100))
+
+        # Gestione doppio inserimento prezzo (Listino forzato o Calcolato)
+        prezzo_listino_input = request.form.get("prezzo_listino", "").strip()
+        if prezzo_listino_input:
+            prezzo_listino = float(prezzo_listino_input)
+            if prezzo_acquisto > 0:
+                ricarico_percentuale = (
+                    (prezzo_listino - prezzo_acquisto) / prezzo_acquisto
+                ) * 100
+        else:
+            prezzo_listino = prezzo_acquisto + (
+                prezzo_acquisto * (ricarico_percentuale / 100.0)
+            )
 
         colori = request.form.getlist("colore[]")
         taglie_numeri = request.form.getlist("taglia_numero[]")
         giacenze = request.form.getlist("giacenza[]")
         barcodes = request.form.getlist("barcode[]")
-
-        prezzo_listino = prezzo_acquisto + (
-            prezzo_acquisto * (ricarico_percentuale / 100.0)
-        )
 
         articolo = Articolo.query.filter_by(codice_modello=codice_modello).first()
 
@@ -203,6 +212,7 @@ def check_modello(codice):
             "tipologia": articolo.tipologia,
             "prezzo_acquisto": articolo.prezzo_acquisto,
             "ricarico_percentuale": articolo.ricarico_percentuale,
+            "prezzo_listino": articolo.prezzo_listino,
             "varianti": lista_varianti,
         }
     )
@@ -235,7 +245,6 @@ def cerca_articolo(barcode):
     )
 
 
-# 🔍 API RICERCA MANUALE PRODOTTI IN CASSA
 @app.route("/api/cerca_prodotti_cassa")
 def cerca_prodotti_cassa():
     query = request.args.get("q", "").strip()
@@ -370,11 +379,47 @@ def paga_scadenza(id):
 def tools():
     tutte_varianti = (
         VarianteArticolo.query.join(Articolo)
-        .join(Fornitore)
+        .outerjoin(Fornitore)
         .order_by(Fornitore.nome, Articolo.nome)
         .all()
     )
-    return render_template("tools.html", varianti=tutte_varianti)
+    lista_fornitori = Fornitore.query.order_by(Fornitore.nome.asc()).all()
+    return render_template(
+        "tools.html", varianti=tutte_varianti, fornitori=lista_fornitori
+    )
+
+
+# ✏️ NUOVA ROTTA: MODIFICA COMPLETA ARTICOLO / VARIANTE
+@app.route("/tools/modifica/<int:id>", methods=["POST"])
+def modifica_variante(id):
+    variante = VarianteArticolo.query.get_or_404(id)
+    articolo = variante.articolo
+
+    articolo.nome = request.form["nome"].strip()
+    articolo.fornitore_id = int(request.form["fornitore_id"])
+    articolo.tipologia = request.form["tipologia"]
+    articolo.prezzo_acquisto = float(request.form["prezzo_acquisto"])
+    articolo.prezzo_listino = float(request.form["prezzo_listino"])
+
+    if articolo.prezzo_acquisto > 0:
+        articolo.ricarico_percentuale = (
+            (articolo.prezzo_listino - articolo.prezzo_acquisto)
+            / articolo.prezzo_acquisto
+        ) * 100
+
+    variante.colore = request.form["colore"].strip()
+    variante.taglia_numero = request.form["taglia_numero"].strip()
+    variante.barcode = request.form["barcode"].strip()
+    variante.giacenza = int(request.form["giacenza"])
+
+    db.session.commit()
+    aggiorna_giacenza_stratoos(variante.barcode, variante.giacenza)
+
+    flash(
+        f"✏️ Prodotto '{articolo.nome}' (Taglia {variante.taglia_numero}) aggiornato correttamente!",
+        "success",
+    )
+    return redirect("/tools")
 
 
 @app.route("/tools/regola/<int:id>/<string:azione>", methods=["POST"])

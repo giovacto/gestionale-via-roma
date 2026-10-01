@@ -110,15 +110,22 @@
                     </div>
 
                     <h3 class="h5 text-primary border-bottom pb-2 mt-4">2. Prezzi e Margini</h3>
-                    <div class="col-12 col-md-6">
+                    <div class="col-12 col-md-4">
                         <label class="form-label">Prezzo di Acquisto (€)</label>
                         <input type="number" step="0.01" name="prezzo_acquisto" id="prezzo_acquisto"
-                            class="form-control form-control-lg" placeholder="0.00" required>
+                            class="form-control form-control-lg" placeholder="0.00" onkeyup="calcolaDaRicarico()"
+                            required>
                     </div>
-                    <div class="col-12 col-md-6">
+                    <div class="col-12 col-md-4">
                         <label class="form-label">Ricarico (%)</label>
                         <input type="number" name="ricarico_percentuale" id="ricarico_percentuale"
-                            class="form-control form-control-lg" value="100" required>
+                            class="form-control form-control-lg" value="100" onkeyup="calcolaDaRicarico()" required>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label text-success">Prezzo di Listino (€)</label>
+                        <input type="number" step="0.01" name="prezzo_listino" id="prezzo_listino"
+                            class="form-control form-control-lg border-success fw-bold" placeholder="0.00"
+                            onkeyup="calcolaDaListino()">
                     </div>
 
                     <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mt-5">
@@ -170,6 +177,24 @@
     </div>
 
     <script>
+        function calcolaDaRicarico() {
+            let acq = parseFloat(document.getElementById('prezzo_acquisto').value) || 0;
+            let ric = parseFloat(document.getElementById('ricarico_percentuale').value) || 0;
+            if (acq > 0) {
+                let listino = acq + (acq * (ric / 100));
+                document.getElementById('prezzo_listino').value = listino.toFixed(2);
+            }
+        }
+
+        function calcolaDaListino() {
+            let acq = parseFloat(document.getElementById('prezzo_acquisto').value) || 0;
+            let lis = parseFloat(document.getElementById('prezzo_listino').value) || 0;
+            if (acq > 0 && lis >= acq) {
+                let ric = ((lis - acq) / acq) * 100;
+                document.getElementById('ricarico_percentuale').value = Math.round(ric);
+            }
+        }
+
         function generaBarcodeInterno(bottone) {
             let inputBarcode = bottone.closest('.input-group').querySelector('input[name="barcode[]"]');
             let codiceCasuale = 'VR' + Math.floor(100000 + Math.random() * 900000);
@@ -231,6 +256,7 @@
                     let inputTipologia = document.getElementById('tipologia');
                     let inputAcquisto = document.getElementById('prezzo_acquisto');
                     let inputRicarico = document.getElementById('ricarico_percentuale');
+                    let inputListino = document.getElementById('prezzo_listino');
 
                     if (data.esiste) {
                         inputNome.value = data.nome;
@@ -238,14 +264,16 @@
                         inputTipologia.value = data.tipologia;
                         inputAcquisto.value = data.prezzo_acquisto;
                         inputRicarico.value = data.ricarico_percentuale;
+                        inputListino.value = data.prezzo_listino.toFixed(2);
 
                         inputNome.readOnly = true;
                         inputAcquisto.readOnly = true;
                         inputRicarico.readOnly = true;
+                        inputListino.readOnly = true;
                         inputFornitore.style.pointerEvents = 'none';
                         inputTipologia.style.pointerEvents = 'none';
 
-                        [inputNome, inputFornitore, inputTipologia, inputAcquisto, inputRicarico].forEach(el => {
+                        [inputNome, inputFornitore, inputTipologia, inputAcquisto, inputRicarico, inputListino].forEach(el => {
                             el.classList.add('bg-light');
                         });
 
@@ -265,10 +293,11 @@
                         inputNome.readOnly = false;
                         inputAcquisto.readOnly = false;
                         inputRicarico.readOnly = false;
+                        inputListino.readOnly = false;
                         inputFornitore.style.pointerEvents = 'auto';
                         inputTipologia.style.pointerEvents = 'auto';
 
-                        [inputNome, inputFornitore, inputTipologia, inputAcquisto, inputRicarico].forEach(el => {
+                        [inputNome, inputFornitore, inputTipologia, inputAcquisto, inputRicarico, inputListino].forEach(el => {
                             el.classList.remove('bg-light');
                         });
 
