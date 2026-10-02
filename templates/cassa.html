@@ -60,8 +60,9 @@
                                     <th>Codice/Articolo</th>
                                     <th>Variante</th>
                                     <th>Prezzo Listino</th>
-                                    <th style="width: 130px;">Sconto (%)</th>
-                                    <th class="text-end">Prezzo Finale</th>
+                                    <th style="width: 120px;">Sconto (%)</th>
+                                    <th style="width: 150px;" class="text-end">Prezzo Finale</th>
+                                    <th style="width: 50px;"></th>
                                 </tr>
                             </thead>
                             <tbody id="carrello_tbody">
@@ -233,33 +234,96 @@
         function aggiornaInterfaccia() {
             let tbody = document.getElementById('carrello_tbody');
             tbody.innerHTML = '';
-            let totale = 0;
 
             carrello.forEach((item, index) => {
                 let riga = document.createElement('tr');
                 riga.innerHTML = `
-            <td><strong>${item.nome}</strong><br><small class="text-muted">${item.codice_modello} [${item.brand}]</small></td>
-            <td><span class="badge bg-dark">${item.colore}</span> <span class="badge bg-secondary">${item.taglia_numero}</span></td>
-            <td>€ ${item.prezzo_listino.toFixed(2)}</td>
-            <td>
-                <input type="number" class="form-control text-center" value="${item.sconto}" min="0" max="100" onchange="aggiornaSconto(${index}, this.value)">
-            </td>
-            <td class="text-end fw-bold text-success">€ ${item.prezzo_finale.toFixed(2)}</td>
-        `;
+                    <td><strong>${item.nome}</strong><br><small class="text-muted">${item.codice_modello} [${item.brand}]</small></td>
+                    <td><span class="badge bg-dark">${item.colore}</span> <span class="badge bg-secondary">${item.taglia_numero}</span></td>
+                    <td>€ ${item.prezzo_listino.toFixed(2)}</td>
+                    <td>
+                        <input type="number" 
+                               class="form-control text-center input-sconto form-control-sm" 
+                               value="${item.sconto.toFixed(1)}" 
+                               min="0" 
+                               max="100" 
+                               step="0.5" 
+                               oninput="aggiornaSconto(${index}, this)">
+                    </td>
+                    <td class="text-end">
+                        <div class="input-group input-group-sm ms-auto" style="max-width: 120px;">
+                            <span class="input-group-text fw-bold">€</span>
+                            <input type="number" 
+                                   class="form-control text-end input-prezzo-finale fw-bold text-success" 
+                                   value="${item.prezzo_finale.toFixed(2)}" 
+                                   min="0" 
+                                   step="0.01" 
+                                   oninput="aggiornaPrezzoFinale(${index}, this)">
+                        </div>
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-danger" onclick="rimuoviArticolo(${index})" title="Rimuovi">🗑️</button>
+                    </td>
+                `;
                 tbody.appendChild(riga);
-                totale += item.prezzo_finale;
             });
 
-            document.getElementById('totale_generale').innerText = `€ ${totale.toFixed(2)}`;
+            aggiornaTotaleGenerale();
         }
 
-        function aggiornaSconto(index, valoreSconto) {
-            let sconto = parseFloat(valoreSconto) || 0;
+        function aggiornaSconto(index, input) {
+            let listino = carrello[index].prezzo_listino;
+            let sconto = parseFloat(input.value) || 0;
+
             if (sconto < 0) sconto = 0;
             if (sconto > 100) sconto = 100;
 
+            let prezzoFinale = listino - (listino * (sconto / 100));
             carrello[index].sconto = sconto;
-            carrello[index].prezzo_finale = carrello[index].prezzo_listino - (carrello[index].prezzo_listino * (sconto / 100));
+            carrello[index].prezzo_finale = prezzoFinale;
+
+            let riga = input.closest('tr');
+            let fieldPrezzo = riga.querySelector('.input-prezzo-finale');
+            if (fieldPrezzo) {
+                fieldPrezzo.value = prezzoFinale.toFixed(2);
+            }
+
+            aggiornaTotaleGenerale();
+        }
+
+        function aggiornaPrezzoFinale(index, input) {
+            let listino = carrello[index].prezzo_listino;
+            let prezzoFinale = parseFloat(input.value);
+
+            if (isNaN(prezzoFinale) || prezzoFinale < 0) {
+                prezzoFinale = 0;
+            }
+
+            let sconto = 0;
+            if (listino > 0) {
+                sconto = ((listino - prezzoFinale) / listino) * 100;
+                if (sconto < 0) sconto = 0;
+            }
+
+            carrello[index].prezzo_finale = prezzoFinale;
+            carrello[index].sconto = sconto;
+
+            let riga = input.closest('tr');
+            let fieldSconto = riga.querySelector('.input-sconto');
+            if (fieldSconto) {
+                fieldSconto.value = sconto.toFixed(1);
+            }
+
+            aggiornaTotaleGenerale();
+        }
+
+        function aggiornaTotaleGenerale() {
+            let totale = carrello.reduce((acc, item) => acc + (parseFloat(item.prezzo_finale) || 0), 0);
+            document.getElementById('totale_generale').innerText = `€ ${totale.toFixed(2)}`;
+        }
+
+        function rimuoviArticolo(index) {
+            carrello.splice(index, 1);
             aggiornaInterfaccia();
         }
 

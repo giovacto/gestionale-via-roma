@@ -525,7 +525,6 @@ def gestione_fornitori():
     return render_template("fornitori.html", fornitori=tutti_fornitori)
 
 
-# ✏️ NUOVA ROTTA: MODIFICA FORNITORE
 @app.route("/fornitori/modifica/<int:id>", methods=["POST"])
 def modifica_fornitore(id):
     f = Fornitore.query.get_or_404(id)
