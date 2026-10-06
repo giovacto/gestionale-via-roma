@@ -10,7 +10,11 @@ from stratoos import aggiorna_giacenza_stratoos
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "chiave-segreta-gestionale-via-roma"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///magazzino.db"
+
+basedir = os.path.abspath(os.path.dirname(__file__))
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(
+    basedir, "magazzino.db"
+)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
