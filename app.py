@@ -204,11 +204,22 @@ def carico_merci():
     return render_template("carico.html", fornitori=lista_fornitori)
 
 
-@app.route("/api/check_modello/<codice>")
-def check_modello(codice):
+@app.route("/api/check_modello")
+@app.route("/api/check_modello/<path:codice>")
+def check_modello(codice=None):
+    if not codice:
+        codice = request.args.get("q", "").strip()
+    else:
+        codice = codice.strip()
+
+    if not codice:
+        return jsonify({"esiste": False})
+
+    # Ricerca case-insensitive (tollera maiuscole/minuscole)
     articolo = Articolo.query.filter(
-        func.lower(Articolo.codice_modello) == codice.strip().lower()
+        func.lower(Articolo.codice_modello) == codice.lower()
     ).first()
+
     if not articolo:
         return jsonify({"esiste": False})
 

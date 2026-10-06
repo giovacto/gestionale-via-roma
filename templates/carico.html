@@ -259,7 +259,7 @@
                 return;
             }
 
-            fetch(`/api/check_modello/${encodeURIComponent(codice)}`)
+            fetch(`/api/check_modello?q=${encodeURIComponent(codice)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.esiste) {
