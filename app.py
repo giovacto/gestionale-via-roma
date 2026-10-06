@@ -206,7 +206,9 @@ def carico_merci():
 
 @app.route("/api/check_modello/<codice>")
 def check_modello(codice):
-    articolo = Articolo.query.filter_by(codice_modello=codice.strip()).first()
+    articolo = Articolo.query.filter(
+        func.lower(Articolo.codice_modello) == codice.strip().lower()
+    ).first()
     if not articolo:
         return jsonify({"esiste": False})
 

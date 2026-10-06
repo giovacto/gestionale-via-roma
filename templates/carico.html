@@ -241,23 +241,27 @@
             }
         }
 
-        document.getElementById('codice_modello').addEventListener('change', function () {
-            let codice = this.value.trim();
-            if (!codice) return;
+        function verificaCodiceModello() {
+            let inputCodice = document.getElementById('codice_modello');
+            let codice = inputCodice.value.trim();
+            let alertBox = document.getElementById('alert_esistente');
+            let tbody = document.getElementById('tabella_giacenze_esistenti');
 
-            fetch(`/api/check_modello/${codice}`)
+            let inputNome = document.getElementById('nome');
+            let inputFornitore = document.getElementById('fornitore_id');
+            let inputTipologia = document.getElementById('tipologia');
+            let inputAcquisto = document.getElementById('prezzo_acquisto');
+            let inputRicarico = document.getElementById('ricarico_percentuale');
+            let inputListino = document.getElementById('prezzo_listino');
+
+            if (!codice) {
+                resettaCampiModello();
+                return;
+            }
+
+            fetch(`/api/check_modello/${encodeURIComponent(codice)}`)
                 .then(response => response.json())
                 .then(data => {
-                    let alertBox = document.getElementById('alert_esistente');
-                    let tbody = document.getElementById('tabella_giacenze_esistenti');
-
-                    let inputNome = document.getElementById('nome');
-                    let inputFornitore = document.getElementById('fornitore_id');
-                    let inputTipologia = document.getElementById('tipologia');
-                    let inputAcquisto = document.getElementById('prezzo_acquisto');
-                    let inputRicarico = document.getElementById('ricarico_percentuale');
-                    let inputListino = document.getElementById('prezzo_listino');
-
                     if (data.esiste) {
                         inputNome.value = data.nome;
                         inputFornitore.value = data.fornitore_id;
@@ -270,6 +274,7 @@
                         inputAcquisto.readOnly = true;
                         inputRicarico.readOnly = true;
                         inputListino.readOnly = true;
+
                         inputFornitore.style.pointerEvents = 'none';
                         inputTipologia.style.pointerEvents = 'none';
 
@@ -290,20 +295,44 @@
 
                         alertBox.classList.remove('d-none');
                     } else {
-                        inputNome.readOnly = false;
-                        inputAcquisto.readOnly = false;
-                        inputRicarico.readOnly = false;
-                        inputListino.readOnly = false;
-                        inputFornitore.style.pointerEvents = 'auto';
-                        inputTipologia.style.pointerEvents = 'auto';
-
-                        [inputNome, inputFornitore, inputTipologia, inputAcquisto, inputRicarico, inputListino].forEach(el => {
-                            el.classList.remove('bg-light');
-                        });
-
-                        alertBox.classList.add('d-none');
+                        resettaCampiModello();
                     }
                 });
+        }
+
+        function resettaCampiModello() {
+            let alertBox = document.getElementById('alert_esistente');
+            let inputNome = document.getElementById('nome');
+            let inputFornitore = document.getElementById('fornitore_id');
+            let inputTipologia = document.getElementById('tipologia');
+            let inputAcquisto = document.getElementById('prezzo_acquisto');
+            let inputRicarico = document.getElementById('ricarico_percentuale');
+            let inputListino = document.getElementById('prezzo_listino');
+
+            // Se il prodotto non esiste, sblocca e svuota
+            inputNome.readOnly = false;
+            inputAcquisto.readOnly = false;
+            inputRicarico.readOnly = false;
+            inputListino.readOnly = false;
+
+            inputFornitore.style.pointerEvents = 'auto';
+            inputTipologia.style.pointerEvents = 'auto';
+
+            [inputNome, inputFornitore, inputTipologia, inputAcquisto, inputRicarico, inputListino].forEach(el => {
+                el.classList.remove('bg-light');
+            });
+
+            alertBox.classList.add('d-none');
+        }
+
+        // Eventi per far scattare la verifica sia quando si perde il focus sia premendo Invio
+        document.getElementById('codice_modello').addEventListener('blur', verificaCodiceModello);
+        document.getElementById('codice_modello').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                verificaCodiceModello();
+                document.getElementById('nome').focus();
+            }
         });
 
         document.getElementById('contenitore_varianti').addEventListener('change', function (e) {
