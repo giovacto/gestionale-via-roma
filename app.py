@@ -27,7 +27,20 @@ with app.app_context():
 @app.route("/")
 @app.route("/dashboard")
 def dashboard():
-    return render_template("dashboard.html")
+    from models import VarianteArticolo
+
+    # Calcolo totale giacenze per dashboard
+    tutte_varianti = VarianteArticolo.query.all()
+    totale_incassato = sum(
+        (v.articolo.prezzo_acquisto or 0) * v.giacenza for v in tutte_varianti
+    )
+    scadenze_attive = 0  # Valore placeholder in attesa della logica scadenze
+
+    return render_template(
+        "dashboard.html",
+        totale_incassato=totale_incassato,
+        scadenze_attive=scadenze_attive,
+    )
 
 
 @app.route("/cassa")
