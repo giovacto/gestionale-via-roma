@@ -224,12 +224,19 @@ def fornitori():
     return render_template("fornitori.html", fornitori=lista_fornitori)
 
 
-@app.route("/report")
+@app.route("/report", methods=["GET", "POST"])
 def report():
     rep_incasso = 0.0
     rep_vendite = 0
     rep_margine = 0.0
     rep_guadagno = 0.0
+
+    if request.method == "POST":
+        data_inizio = request.form.get("data_inizio")
+        data_fine = request.form.get("data_fine")
+    else:
+        data_inizio = request.args.get("data_inizio")
+        data_fine = request.args.get("data_fine")
 
     return render_template(
         "report.html",
