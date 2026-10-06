@@ -26,18 +26,32 @@ with app.app_context():
 
 @app.route("/")
 @app.route("/dashboard")
+@app.route("/")
+@app.route("/dashboard")
 def dashboard():
-
-    # Calcolo totale giacenze per dashboard
     tutte_varianti = VarianteArticolo.query.all()
+
+    # Valore totale di listino del magazzino
     totale_incassato = sum(
-        (v.articolo.prezzo_acquisto or 0) * v.giacenza for v in tutte_varianti
+        (v.articolo.prezzo_listino or 0) * v.giacenza
+        for v in tutte_varianti
+        if v.articolo
     )
-    scadenze_attive = 0  # Valore placeholder in attesa della logica scadenze
+
+    # Margine/Guadagno potenziale (Listino - Acquisto)
+    totale_guadagnato = sum(
+        ((v.articolo.prezzo_listino or 0) - (v.articolo.prezzo_acquisto or 0))
+        * v.giacenza
+        for v in tutte_varianti
+        if v.articolo
+    )
+
+    scadenze_attive = 0
 
     return render_template(
         "dashboard.html",
         totale_incassato=totale_incassato,
+        totale_guadagnato=totale_guadagnato,
         scadenze_attive=scadenze_attive,
     )
 
