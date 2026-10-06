@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from sqlalchemy import func
 
 # Import modelli database
-from models import db, Articolo, VarianteArticolo, Fornitore
+from database.models import db, Articolo, VarianteArticolo, Fornitore
 
 # Import integrazione Stratoos
 from stratoos import aggiorna_giacenza_stratoos
