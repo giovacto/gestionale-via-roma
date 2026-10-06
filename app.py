@@ -4,7 +4,15 @@ from sqlalchemy import func
 
 # Import modelli database
 from datetime import datetime, date
-from database.models import Vendita, DettaglioVendita, VarianteArticolo, Fornitore
+from database.models import (
+    db,
+    Fornitore,
+    Articolo,
+    VarianteArticolo,
+    Vendita,
+    DettaglioVendita,
+    Scadenza,
+)
 
 # Import integrazione Stratoos
 from stratoos import aggiorna_giacenza_stratoos
