@@ -27,7 +27,6 @@ with app.app_context():
 @app.route("/")
 @app.route("/dashboard")
 def dashboard():
-    from models import VarianteArticolo
 
     # Calcolo totale giacenze per dashboard
     tutte_varianti = VarianteArticolo.query.all()
