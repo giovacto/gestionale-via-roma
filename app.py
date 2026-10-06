@@ -226,7 +226,17 @@ def fornitori():
 
 @app.route("/report")
 def report():
-    return render_template("report.html")
+    # Valori di base placeholder per i report
+    rep_incasso = 0.0
+    rep_vendite = 0
+    rep_margine = 0.0
+
+    return render_template(
+        "report.html",
+        rep_incasso=rep_incasso,
+        rep_vendite=rep_vendite,
+        rep_margine=rep_margine,
+    )
 
 
 @app.route("/scadenziario")
