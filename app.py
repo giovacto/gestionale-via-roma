@@ -118,7 +118,6 @@ def carico():
             col = colori[i].strip() if i < len(colori) else "Nero"
             qta = int(giacenze[i]) if (i < len(giacenze) and giacenze[i]) else 1
 
-            # Se la taglia è vuota (es. per le borse/accessori), imposta automaticamente "TU"
             if not num:
                 num = "TU"
 
@@ -271,14 +270,87 @@ def report():
     )
 
 
-@app.route("/scadenziario")
-def scadenziario():
-    return render_template("scadenziario.html")
+# -------------------------------------------------------------------
+# TOOLS E RETTIFICA MAGAZZINO
+# -------------------------------------------------------------------
 
 
 @app.route("/tools")
 def tools():
-    return render_template("tools.html")
+    varianti = VarianteArticolo.query.all()
+    fornitori_list = Fornitore.query.order_by(Fornitore.nome.asc()).all()
+    return render_template("tools.html", varianti=varianti, fornitori=fornitori_list)
+
+
+@app.route("/tools/regola/<int:variante_id>/<azione>", methods=["POST"])
+def regola_giacenza(variante_id, azione):
+    variante = VarianteArticolo.query.get_or_404(variante_id)
+
+    if azione == "piu":
+        variante.giacenza += 1
+        flash(f"➕ Giacenza aumentata per {variante.articolo.nome}", "success")
+    elif azione == "meno":
+        if variante.giacenza > 0:
+            variante.giacenza -= 1
+            flash(f"➖ Giacenza ridotta per {variante.articolo.nome}", "warning")
+        else:
+            flash("⚠️ Impossibile ridurre la giacenza sotto zero!", "danger")
+    elif azione == "elimina":
+        db.session.delete(variante)
+        db.session.commit()
+        flash("🗑️ Articolo eliminato dal magazzino!", "info")
+        return redirect(url_for("tools"))
+
+    db.session.commit()
+
+    # Sincronizzazione automatica con Stratoos
+    try:
+        aggiorna_giacenza_stratoos(
+            barcode=variante.barcode,
+            codice_modello=variante.articolo.codice_modello,
+            nuova_giacenza=variante.giacenza,
+        )
+    except Exception as e:
+        print(f"Errore sincronizzazione Stratoos: {e}")
+
+    return redirect(url_for("tools"))
+
+
+@app.route("/tools/modifica/<int:variante_id>", methods=["POST"])
+def modifica_variante(variante_id):
+    variante = VarianteArticolo.query.get_or_404(variante_id)
+    articolo = variante.articolo
+
+    articolo.nome = request.form.get("nome", "").strip()
+    articolo.fornitore_id = request.form.get("fornitore_id")
+    articolo.tipologia = request.form.get("tipologia", "").strip()
+    articolo.prezzo_acquisto = float(request.form.get("prezzo_acquisto") or 0)
+    articolo.prezzo_listino = float(request.form.get("prezzo_listino") or 0)
+
+    variante.colore = request.form.get("colore", "").strip()
+    variante.taglia_numero = request.form.get("taglia_numero", "").strip()
+    variante.barcode = request.form.get("barcode", "").strip()
+    variante.giacenza = int(request.form.get("giacenza") or 0)
+
+    db.session.commit()
+
+    # Sincronizzazione automatica con Stratoos
+    try:
+        aggiorna_giacenza_stratoos(
+            barcode=variante.barcode,
+            codice_modello=articolo.codice_modello,
+            nuova_giacenza=variante.giacenza,
+        )
+    except Exception as e:
+        print(f"Errore sincronizzazione Stratoos: {e}")
+
+    flash("✏️ Dettagli articolo modificati con successo!", "success")
+    return redirect(url_for("tools"))
+
+
+@app.route("/scadenziario")
+def scadenziario():
+    return render_template("scadenziario.html")
 
 
 if __name__ == "__main__":
