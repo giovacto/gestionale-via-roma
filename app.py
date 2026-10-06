@@ -1,9 +1,9 @@
 import os
+from datetime import datetime, date
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from sqlalchemy import func
 
 # Import modelli database
-from datetime import datetime, date
 from database.models import (
     db,
     Fornitore,
@@ -43,27 +43,17 @@ def dashboard():
     oggi = date.today()
 
     # Preleva le vendite effettuate nella giornata di oggi
-    vendite_oggi = Vendita.query.filter(db.func.date(Vendita.data_ora) == oggi).all()
+    vendite_oggi = Vendita.query.filter(
+        db.func.date(Vendita.data_vendita) == oggi
+    ).all()
 
-    totale_incassato = sum(v.totale for v in vendite_oggi) if vendite_oggi else 0.0
+    totale_incassato = sum(v.importo_totale_incassato or 0.0 for v in vendite_oggi)
+    totale_guadagnato = sum(v.importo_totale_guadagnato or 0.0 for v in vendite_oggi)
 
-    # Calcolo pezzi usciti/venduti oggi
     pezzi_oggi = 0
-    totale_guadagnato = 0.0
-
     for v in vendite_oggi:
-        for d in v.dettagli:
-            pezzi_oggi += d.quantita
-            prezzo_acq = (
-                d.variante.articolo.prezzo_acquisto
-                if (
-                    d.variante
-                    and d.variante.articolo
-                    and d.variante.articolo.prezzo_acquisto
-                )
-                else 0.0
-            )
-            totale_guadagnato += (d.prezzo_unitario - prezzo_acq) * d.quantita
+        if hasattr(v, "dettagli") and v.dettagli:
+            pezzi_oggi += sum(d.quantita for d in v.dettagli)
 
     scadenze_attive = 0
 
@@ -254,27 +244,21 @@ def report():
 
     if data_inizio:
         d_inizio = datetime.strptime(data_inizio, "%Y-%m-%d")
-        query = query.filter(Vendita.data_ora >= d_inizio)
+        query = query.filter(Vendita.data_vendita >= d_inizio)
     if data_fine:
         d_fine = datetime.strptime(data_fine + " 23:59:59", "%Y-%m-%d %H:%M:%S")
-        query = query.filter(Vendita.data_ora <= d_fine)
+        query = query.filter(Vendita.data_vendita <= d_fine)
 
     vendite_filtrate = query.all()
 
     for v in vendite_filtrate:
-        rep_incasso += v.totale or 0.0
-        for d in v.dettagli:
-            rep_vendite += d.quantita
-            prezzo_acq = (
-                d.variante.articolo.prezzo_acquisto
-                if (
-                    d.variante
-                    and d.variante.articolo
-                    and d.variante.articolo.prezzo_acquisto
-                )
-                else 0.0
-            )
-            rep_guadagno += (d.prezzo_unitario - prezzo_acq) * d.quantita
+        rep_incasso += v.importo_totale_incassato or 0.0
+        rep_guadagno += v.importo_totale_guadagnato or 0.0
+        if hasattr(v, "dettagli") and v.dettagli:
+            rep_vendite += sum(d.quantita for d in v.dettagli)
+
+    if rep_incasso > 0:
+        rep_margine = (rep_guadagno / rep_incasso) * 100.0
 
     return render_template(
         "report.html",
