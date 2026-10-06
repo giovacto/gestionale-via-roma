@@ -3,7 +3,8 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from sqlalchemy import func
 
 # Import modelli database
-from database.models import db, Articolo, VarianteArticolo, Fornitore
+from datetime import datetime, date
+from database.models import Vendita, DettaglioVendita, VarianteArticolo, Fornitore
 
 # Import integrazione Stratoos
 from stratoos import aggiorna_giacenza_stratoos
@@ -30,25 +31,31 @@ with app.app_context():
 
 @app.route("/")
 @app.route("/dashboard")
-@app.route("/")
-@app.route("/dashboard")
 def dashboard():
-    tutte_varianti = VarianteArticolo.query.all()
+    oggi = date.today()
 
-    # Valore totale di listino del magazzino
-    totale_incassato = sum(
-        (v.articolo.prezzo_listino or 0) * v.giacenza
-        for v in tutte_varianti
-        if v.articolo
-    )
+    # Preleva le vendite effettuate nella giornata di oggi
+    vendite_oggi = Vendita.query.filter(db.func.date(Vendita.data_ora) == oggi).all()
 
-    # Margine/Guadagno potenziale (Listino - Acquisto)
-    totale_guadagnato = sum(
-        ((v.articolo.prezzo_listino or 0) - (v.articolo.prezzo_acquisto or 0))
-        * v.giacenza
-        for v in tutte_varianti
-        if v.articolo
-    )
+    totale_incassato = sum(v.totale for v in vendite_oggi) if vendite_oggi else 0.0
+
+    # Calcolo pezzi usciti/venduti oggi
+    pezzi_oggi = 0
+    totale_guadagnato = 0.0
+
+    for v in vendite_oggi:
+        for d in v.dettagli:
+            pezzi_oggi += d.quantita
+            prezzo_acq = (
+                d.variante.articolo.prezzo_acquisto
+                if (
+                    d.variante
+                    and d.variante.articolo
+                    and d.variante.articolo.prezzo_acquisto
+                )
+                else 0.0
+            )
+            totale_guadagnato += (d.prezzo_unitario - prezzo_acq) * d.quantita
 
     scadenze_attive = 0
 
@@ -56,6 +63,7 @@ def dashboard():
         "dashboard.html",
         totale_incassato=totale_incassato,
         totale_guadagnato=totale_guadagnato,
+        pezzi_oggi=pezzi_oggi,
         scadenze_attive=scadenze_attive,
     )
 
@@ -228,22 +236,46 @@ def fornitori():
 def report():
     rep_incasso = 0.0
     rep_vendite = 0
-    rep_margine = 0.0
     rep_guadagno = 0.0
+    rep_margine = 0.0
 
-    if request.method == "POST":
-        data_inizio = request.form.get("data_inizio")
-        data_fine = request.form.get("data_fine")
-    else:
-        data_inizio = request.args.get("data_inizio")
-        data_fine = request.args.get("data_fine")
+    data_inizio = request.form.get("data_inizio") or request.args.get("data_inizio")
+    data_fine = request.form.get("data_fine") or request.args.get("data_fine")
+
+    query = Vendita.query
+
+    if data_inizio:
+        d_inizio = datetime.strptime(data_inizio, "%Y-%m-%d")
+        query = query.filter(Vendita.data_ora >= d_inizio)
+    if data_fine:
+        d_fine = datetime.strptime(data_fine + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+        query = query.filter(Vendita.data_ora <= d_fine)
+
+    vendite_filtrate = query.all()
+
+    for v in vendite_filtrate:
+        rep_incasso += v.totale or 0.0
+        for d in v.dettagli:
+            rep_vendite += d.quantita
+            prezzo_acq = (
+                d.variante.articolo.prezzo_acquisto
+                if (
+                    d.variante
+                    and d.variante.articolo
+                    and d.variante.articolo.prezzo_acquisto
+                )
+                else 0.0
+            )
+            rep_guadagno += (d.prezzo_unitario - prezzo_acq) * d.quantita
 
     return render_template(
         "report.html",
         rep_incasso=rep_incasso,
         rep_vendite=rep_vendite,
-        rep_margine=rep_margine,
         rep_guadagno=rep_guadagno,
+        rep_margine=rep_margine,
+        data_inizio=data_inizio or "",
+        data_fine=data_fine or "",
     )
 
 
