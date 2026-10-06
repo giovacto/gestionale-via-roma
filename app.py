@@ -220,7 +220,8 @@ def check_barcode(barcode):
 
 @app.route("/fornitori")
 def fornitori():
-    return render_template("fornitori.html")
+    lista_fornitori = Fornitore.query.all()
+    return render_template("fornitori.html", fornitori=lista_fornitori)
 
 
 @app.route("/report")
