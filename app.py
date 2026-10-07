@@ -1,6 +1,16 @@
 import os
 from datetime import datetime, date
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from functools import wraps
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    jsonify,
+    session,
+)
 from sqlalchemy import func
 
 # Import modelli database
@@ -33,12 +43,52 @@ with app.app_context():
 
 
 # -------------------------------------------------------------------
+# SISTEMA DI LOGIN
+# -------------------------------------------------------------------
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get("logged_in"):
+            flash("🔒 Devi effettuare l'accesso per entrare nel gestionale.", "warning")
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+
+        if username == "admin" and password == "Loredanalo":
+            session["logged_in"] = True
+            flash("✅ Accesso effettuato con successo!", "success")
+            return redirect(url_for("dashboard"))
+        else:
+            flash("❌ Credenziali errate. Riprova.", "danger")
+
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("🚪 Disconnessione effettuata con successo.", "info")
+    return redirect(url_for("login"))
+
+
+# -------------------------------------------------------------------
 # ROUTE PRINCIPALI
 # -------------------------------------------------------------------
 
 
 @app.route("/")
 @app.route("/dashboard")
+@login_required
 def dashboard():
     oggi = date.today()
 
@@ -67,11 +117,13 @@ def dashboard():
 
 
 @app.route("/cassa")
+@login_required
 def cassa():
     return render_template("cassa.html")
 
 
 @app.route("/carico", methods=["GET", "POST"])
+@login_required
 def carico():
     if request.method == "POST":
         codice_modello = request.form.get("codice_modello", "").strip()
@@ -166,6 +218,7 @@ def carico():
 
 @app.route("/api/check_modello")
 @app.route("/api/check_modello/<path:codice>")
+@login_required
 def check_modello(codice=None):
     if not codice:
         codice = request.args.get("q", "").strip()
@@ -208,6 +261,7 @@ def check_modello(codice=None):
 
 
 @app.route("/api/articolo/<barcode>")
+@login_required
 def check_barcode(barcode):
     variante = VarianteArticolo.query.filter_by(barcode=barcode.strip()).first()
     if variante:
@@ -224,12 +278,14 @@ def check_barcode(barcode):
 
 
 @app.route("/fornitori")
+@login_required
 def fornitori():
     lista_fornitori = Fornitore.query.all()
     return render_template("fornitori.html", fornitori=lista_fornitori)
 
 
 @app.route("/report", methods=["GET", "POST"])
+@login_required
 def report():
     rep_incasso = 0.0
     rep_vendite = 0
@@ -276,6 +332,7 @@ def report():
 
 
 @app.route("/tools")
+@login_required
 def tools():
     varianti = VarianteArticolo.query.all()
     fornitori_list = Fornitore.query.order_by(Fornitore.nome.asc()).all()
@@ -283,6 +340,7 @@ def tools():
 
 
 @app.route("/tools/regola/<int:variante_id>/<azione>", methods=["POST"])
+@login_required
 def regola_giacenza(variante_id, azione):
     variante = VarianteArticolo.query.get_or_404(variante_id)
 
@@ -317,6 +375,7 @@ def regola_giacenza(variante_id, azione):
 
 
 @app.route("/tools/modifica/<int:variante_id>", methods=["POST"])
+@login_required
 def modifica_variante(variante_id):
     variante = VarianteArticolo.query.get_or_404(variante_id)
     articolo = variante.articolo
@@ -349,14 +408,9 @@ def modifica_variante(variante_id):
 
 
 @app.route("/scadenziario")
+@login_required
 def scadenziario():
     return render_template("scadenziario.html")
-
-
-@app.route("/logout")
-def logout():
-    flash("Disconnessione effettuata con successo.", "info")
-    return redirect(url_for("dashboard"))
 
 
 if __name__ == "__main__":
