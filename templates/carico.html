@@ -27,6 +27,12 @@
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+
+        /* Animazione per nascondere il campo taglia fluidamente */
+        .col-taglia {
+            transition: width 0.3s ease, opacity 0.3s ease;
         }
     </style>
 </head>
@@ -97,7 +103,8 @@
                     </div>
                     <div class="col-12 col-md-4">
                         <label class="form-label">Tipologia Articolo</label>
-                        <select name="tipologia" id="tipologia" class="form-select form-select-lg" required>
+                        <select name="tipologia" id="tipologia" class="form-select form-select-lg" required
+                            onchange="gestisciCampiTaglia()">
                             <option value="Scarpe Donna">Scarpe Donna</option>
                             <option value="Scarpe Uomo">Scarpe Uomo</option>
                             <option value="Scarpe Bambino">Scarpe Bambino</option>
@@ -130,26 +137,25 @@
 
                     <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mt-5">
                         <h3 class="h5 text-primary mb-0">3. Inserimento Misure, Barcode e Quantità</h3>
-                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold"
+                        <button type="button" id="btn_aggiungi_variante" class="btn btn-outline-primary btn-sm fw-bold"
                             onclick="aggiungiRigaVariante()">➕ Aggiungi altra misura</button>
                     </div>
 
                     <div id="contenitore_varianti">
                         <div class="row g-2 variante-row align-items-end">
-                            <div class="col-12 col-md-3">
+                            <div class="col-12 col-md-3 col-colore">
                                 <label class="form-label small">Colore</label>
                                 <input type="text" name="colore[]" class="form-control" value="Nero" required>
                             </div>
-                            <div class="col-12 col-md-2">
+                            <div class="col-12 col-md-2 col-taglia">
                                 <label class="form-label small">Numero/Taglia</label>
-                                <input type="text" name="taglia_numero[]" class="form-control" placeholder="es. 38"
-                                    required>
+                                <input type="text" name="taglia_numero[]" class="form-control" placeholder="es. 38">
                             </div>
-                            <div class="col-12 col-md-2">
+                            <div class="col-12 col-md-2 col-quantita">
                                 <label class="form-label small">Nuova Quantità</label>
                                 <input type="number" name="giacenza[]" class="form-control" value="1" min="0" required>
                             </div>
-                            <div class="col-12 col-md-4">
+                            <div class="col-12 col-md-4 col-barcode">
                                 <label class="form-label small">Codice a Barre (Barcode)</label>
                                 <div class="input-group">
                                     <input type="text" name="barcode[]" class="form-control border-warning"
@@ -177,6 +183,42 @@
     </div>
 
     <script>
+        // Funzione magica per nascondere o mostrare il campo taglia in base al tipo di prodotto
+        function gestisciCampiTaglia() {
+            const tipologia = document.getElementById('tipologia').value;
+            const colonneTaglia = document.querySelectorAll('.col-taglia');
+            const btnAggiungi = document.getElementById('btn_aggiungi_variante');
+
+            // Controlla se la tipologia NON inizia con la parola "Scarpe"
+            const eUnAccessorio = !tipologia.startsWith('Scarpe');
+
+            // Cambia il testo del bottone dinamicamente
+            if (eUnAccessorio) {
+                btnAggiungi.innerHTML = '➕ Aggiungi colore';
+            } else {
+                btnAggiungi.innerHTML = '➕ Aggiungi altra misura';
+            }
+
+            colonneTaglia.forEach(colonna => {
+                const inputTaglia = colonna.querySelector('input');
+
+                if (eUnAccessorio) {
+                    colonna.style.display = 'none';      // Nascondi intero riquadro
+                    inputTaglia.value = '';              // Pulisci il valore
+                    inputTaglia.removeAttribute('required'); // Rimuovi l'obbligo di inserimento
+                } else {
+                    colonna.style.display = 'block';     // Rimostra il riquadro
+                    inputTaglia.setAttribute('required', 'required'); // Rimetti l'obbligo
+                }
+            });
+        }
+
+        // Chiamo subito la funzione all'avvio nel caso il browser abbia ricaricato la pagina salvando la selezione
+        document.addEventListener("DOMContentLoaded", function () {
+            gestisciCampiTaglia();
+        });
+
+
         function calcolaDaRicarico() {
             let acq = parseFloat(document.getElementById('prezzo_acquisto').value) || 0;
             let ric = parseFloat(document.getElementById('ricarico_percentuale').value) || 0;
@@ -209,16 +251,16 @@
             let nuovaRiga = document.createElement('div');
             nuovaRiga.className = "row g-2 variante-row align-items-end";
             nuovaRiga.innerHTML = `
-        <div class="col-12 col-md-3">
+        <div class="col-12 col-md-3 col-colore">
             <input type="text" name="colore[]" class="form-control" value="${colorePredefinito}" required>
         </div>
-        <div class="col-12 col-md-2">
+        <div class="col-12 col-md-2 col-taglia">
             <input type="text" name="taglia_numero[]" class="form-control" placeholder="es. 39" required>
         </div>
-        <div class="col-12 col-md-2">
+        <div class="col-12 col-md-2 col-quantita">
             <input type="number" name="giacenza[]" class="form-control" value="1" min="0" required>
         </div>
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-md-4 col-barcode">
             <div class="input-group">
                 <input type="text" name="barcode[]" class="form-control border-warning" placeholder="Spara col lettore" required autocomplete="off">
                 <button type="button" class="btn btn-outline-dark fw-bold" onclick="generaBarcodeInterno(this)" title="Crea un codice interno automatico">⚡ Genera</button>
@@ -229,7 +271,11 @@
         </div>
     `;
             container.appendChild(nuovaRiga);
-            nuovaRiga.querySelector('input[name="taglia_numero[]"]').focus();
+
+            // Faccio scattare il controllo visuale sulla nuova riga
+            gestisciCampiTaglia();
+
+            nuovaRiga.querySelector('input[name="colore[]"]').focus();
         }
 
         function rimuoviRiga(bottone) {
@@ -269,6 +315,9 @@
                         inputAcquisto.value = data.prezzo_acquisto;
                         inputRicarico.value = data.ricarico_percentuale;
                         inputListino.value = data.prezzo_listino.toFixed(2);
+
+                        // Faccio aggiornare l'interfaccia nel caso il db mi dica che è un accessorio
+                        gestisciCampiTaglia();
 
                         inputNome.readOnly = true;
                         inputAcquisto.readOnly = true;
@@ -323,6 +372,9 @@
             });
 
             alertBox.classList.add('d-none');
+
+            // Ripristino i campi taglia di default
+            gestisciCampiTaglia();
         }
 
         // Eventi per far scattare la verifica sia quando si perde il focus sia premendo Invio
