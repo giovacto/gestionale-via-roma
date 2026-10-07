@@ -277,11 +277,53 @@ def check_barcode(barcode):
     return jsonify({"esiste": False}), 404
 
 
-@app.route("/fornitori")
+@app.route("/fornitori", methods=["GET", "POST"])
 @login_required
 def fornitori():
-    lista_fornitori = Fornitore.query.all()
+    if request.method == "POST":
+        nome = request.form.get("nome", "").strip()
+        telefono = request.form.get("telefono", "").strip()
+        email = request.form.get("email", "").strip()
+
+        if not nome:
+            flash("⚠️ Il nome del fornitore è obbligatorio!", "danger")
+            return redirect(url_for("fornitori"))
+
+        nuovo_fornitore = Fornitore(nome=nome, telefono=telefono, email=email)
+        db.session.add(nuovo_fornitore)
+        db.session.commit()
+
+        flash(f"✅ Fornitore '{nome}' aggiunto con successo!", "success")
+        return redirect(url_for("fornitori"))
+
+    # Ordina in ordine alfabetico i fornitori
+    lista_fornitori = Fornitore.query.order_by(Fornitore.nome.asc()).all()
     return render_template("fornitori.html", fornitori=lista_fornitori)
+
+
+@app.route("/fornitori/modifica/<int:id>", methods=["POST"])
+@login_required
+def modifica_fornitore(id):
+    fornitore = Fornitore.query.get_or_404(id)
+    fornitore.nome = request.form.get("nome", "").strip()
+    fornitore.telefono = request.form.get("telefono", "").strip()
+    fornitore.email = request.form.get("email", "").strip()
+
+    db.session.commit()
+    flash(f"✏️ Fornitore '{fornitore.nome}' aggiornato con successo!", "success")
+    return redirect(url_for("fornitori"))
+
+
+@app.route("/fornitori/elimina/<int:id>", methods=["POST"])
+@login_required
+def elimina_fornitore(id):
+    fornitore = Fornitore.query.get_or_404(id)
+    nome = fornitore.nome
+    db.session.delete(fornitore)
+    db.session.commit()
+
+    flash(f"🗑️ Fornitore '{nome}' eliminato!", "info")
+    return redirect(url_for("fornitori"))
 
 
 @app.route("/report", methods=["GET", "POST"])
