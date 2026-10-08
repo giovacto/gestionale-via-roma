@@ -266,6 +266,7 @@ def check_barcode(barcode):
     variante = VarianteArticolo.query.filter_by(barcode=barcode.strip()).first()
     if variante:
         articolo = variante.articolo
+        brand_nome = articolo.fornitore.nome if articolo.fornitore else "Via Roma"
         return jsonify(
             {
                 "esiste": True,
@@ -274,6 +275,7 @@ def check_barcode(barcode):
                 "articolo_id": articolo.id,
                 "codice_modello": articolo.codice_modello,
                 "nome": articolo.nome,
+                "brand": brand_nome,
                 "colore": variante.colore,
                 "taglia_numero": variante.taglia_numero,
                 "prezzo_listino": articolo.prezzo_listino or 0.0,
@@ -282,6 +284,112 @@ def check_barcode(barcode):
             }
         )
     return jsonify({"esiste": False}), 404
+
+
+@app.route("/api/cerca_prodotti_cassa")
+@login_required
+def cerca_prodotti_cassa():
+    query = request.args.get("q", "").strip().lower()
+    if len(query) < 2:
+        return jsonify([])
+
+    risultati = []
+    varianti = (
+        VarianteArticolo.query.join(Articolo)
+        .filter(
+            (func.lower(Articolo.nome).like(f"%{query}%"))
+            | (func.lower(Articolo.codice_modello).like(f"%{query}%"))
+            | (func.lower(VarianteArticolo.colore).like(f"%{query}%"))
+        )
+        .limit(20)
+        .all()
+    )
+
+    for v in varianti:
+        brand_nome = v.articolo.fornitore.nome if v.articolo.fornitore else "Via Roma"
+        risultati.append(
+            {
+                "esiste": True,
+                "id": v.id,
+                "variante_id": v.id,
+                "articolo_id": v.articolo.id,
+                "codice_modello": v.articolo.codice_modello,
+                "nome": v.articolo.nome,
+                "brand": brand_nome,
+                "colore": v.colore,
+                "taglia_numero": v.taglia_numero,
+                "prezzo_listino": v.articolo.prezzo_listino or 0.0,
+                "giacenza": v.giacenza,
+                "barcode": v.barcode,
+            }
+        )
+
+    return jsonify(risultati)
+
+
+@app.route("/api/vendi", methods=["POST"])
+@login_required
+def API_vendi():
+    carrello = request.json
+    if not carrello or len(carrello) == 0:
+        return jsonify({"success": False, "message": "Carrello vuoto"}), 400
+
+    totale_incassato = 0.0
+    totale_guadagnato = 0.0
+
+    nuova_vendita = Vendita(
+        data_vendita=datetime.now(),
+        importo_totale_incassato=0,
+        importo_totale_guadagnato=0,
+    )
+    db.session.add(nuova_vendita)
+    db.session.flush()
+
+    for item in carrello:
+        variante_id = item.get("variante_id")
+        prezzo_finale = float(item.get("prezzo_finale", 0))
+
+        variante = VarianteArticolo.query.get(variante_id)
+        if not variante:
+            continue
+
+        costo_acquisto = variante.articolo.prezzo_acquisto or 0.0
+        guadagno_pezzo = prezzo_finale - costo_acquisto
+
+        dettaglio = DettaglioVendita(
+            vendita_id=nuova_vendita.id,
+            variante_id=variante.id,
+            quantita=1,
+            prezzo_singolo_venduto=prezzo_finale,
+        )
+        db.session.add(dettaglio)
+
+        if variante.giacenza > 0:
+            variante.giacenza -= 1
+
+        try:
+            aggiorna_giacenza_stratoos(
+                barcode=variante.barcode,
+                codice_modello=variante.articolo.codice_modello,
+                nuova_giacenza=variante.giacenza,
+            )
+        except Exception:
+            pass
+
+        totale_incassato += prezzo_finale
+        totale_guadagnato += guadagno_pezzo
+
+    nuova_vendita.importo_totale_incassato = totale_incassato
+    nuova_vendita.importo_totale_guadagnato = totale_guadagnato
+
+    db.session.commit()
+
+    return jsonify({"success": True, "totale": totale_incassato})
+
+
+# -------------------------------------------------------------------
+# FORNITORI E REPORT
+# -------------------------------------------------------------------
 
 
 @app.route("/fornitori", methods=["GET", "POST"])
@@ -340,6 +448,7 @@ def report():
     rep_vendite = 0
     rep_guadagno = 0.0
     rep_margine = 0.0
+    dettagli_filtrati = []
 
     data_inizio = request.form.get("data_inizio") or request.args.get("data_inizio")
     data_fine = request.form.get("data_fine") or request.args.get("data_fine")
@@ -353,13 +462,15 @@ def report():
         d_fine = datetime.strptime(data_fine + " 23:59:59", "%Y-%m-%d %H:%M:%S")
         query = query.filter(Vendita.data_vendita <= d_fine)
 
-    vendite_filtrate = query.all()
+    vendite_filtrate = query.order_by(Vendita.data_vendita.desc()).all()
 
     for v in vendite_filtrate:
         rep_incasso += v.importo_totale_incassato or 0.0
         rep_guadagno += v.importo_totale_guadagnato or 0.0
         if hasattr(v, "dettagli") and v.dettagli:
-            rep_vendite += sum(d.quantita for d in v.dettagli)
+            for d in v.dettagli:
+                rep_vendite += d.quantita
+                dettagli_filtrati.append(d)
 
     if rep_incasso > 0:
         rep_margine = (rep_guadagno / rep_incasso) * 100.0
@@ -367,9 +478,10 @@ def report():
     return render_template(
         "report.html",
         rep_incasso=rep_incasso,
-        rep_vendite=rep_vendite,
+        rep_pezzi=rep_vendite,
         rep_guadagno=rep_guadagno,
         rep_margine=rep_margine,
+        dettagli=dettagli_filtrati,
         data_inizio=data_inizio or "",
         data_fine=data_fine or "",
     )
