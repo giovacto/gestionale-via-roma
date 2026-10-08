@@ -165,15 +165,23 @@
         function aggiungiAProdottoCarrello(data) {
             let msgBox = document.getElementById('status_message');
 
-            if (data.giacenza <= 0) {
+            // Calcola quanti pezzi di QUESTA SPECIFICA VARIANTE sono già nello scontrino
+            let quantitaGiaInScontrino = carrello.filter(item => item.variante_id === data.variante_id).length;
+
+            // Calcola la giacenza residua virtuale
+            let giacenzaDisponibileVirtuale = data.giacenza - quantitaGiaInScontrino;
+
+            // Se la giacenza virtuale è <= 0, mostra l'avviso
+            if (giacenzaDisponibileVirtuale <= 0) {
                 let conferma = confirm(
-                    `⚠️ ATTENZIONE: "${data.nome}" (${data.colore} - Taglia ${data.taglia_numero}) risulta a GIACENZA ZERO (0 pz) nel sistema!\n\n` +
-                    `Vuoi comunque aggiungerlo alla vendita?\n` +
-                    `(Ricordati poi di effettuare la rettifica in Tools).`
+                    `⚠️ ATTENZIONE: Stai tentando di vendere un pezzo aggiuntivo di "${data.nome}" (${data.colore} - Taglia ${data.taglia_numero}), ` +
+                    `ma a magazzino ne risultano solo ${data.giacenza} pz totali e nel carrello ne hai già inseriti ${quantitaGiaInScontrino}.\n\n` +
+                    `Vuoi forzare l'aggiunta nello scontrino?\n` +
+                    `(Ricordati poi di effettuare la rettifica o caricare la merce).`
                 );
                 if (!conferma) {
                     msgBox.className = "alert alert-warning text-center";
-                    msgBox.innerText = `Scansione annullata: ${data.nome} è a giacenza zero.`;
+                    msgBox.innerText = `Scansione annullata: Quantità massima raggiunta per ${data.nome}.`;
                     return;
                 }
             }
