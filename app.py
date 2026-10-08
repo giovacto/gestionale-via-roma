@@ -269,9 +269,16 @@ def check_barcode(barcode):
         return jsonify(
             {
                 "esiste": True,
+                "id": variante.id,
+                "variante_id": variante.id,
+                "articolo_id": articolo.id,
+                "codice_modello": articolo.codice_modello,
                 "nome": articolo.nome,
                 "colore": variante.colore,
                 "taglia_numero": variante.taglia_numero,
+                "prezzo_listino": articolo.prezzo_listino or 0.0,
+                "giacenza": variante.giacenza,
+                "barcode": variante.barcode,
             }
         )
     return jsonify({"esiste": False}), 404
