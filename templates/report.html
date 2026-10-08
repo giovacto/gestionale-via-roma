@@ -49,19 +49,19 @@
             <div class="col-12 col-md-4">
                 <div class="p-4 bg-white rounded-3 shadow-sm text-center border-top border-primary border-4">
                     <h6 class="text-uppercase text-muted small">Pezzi Venduti nel Periodo</h6>
-                    <h2 class="display-5 fw-bold text-primary">{{ rep_pezzi }} <span class="fs-4">paia</span></h2>
+                    <h2 class="display-5 fw-bold text-primary">{{ rep_pezzi or 0 }} <span class="fs-4">pz</span></h2>
                 </div>
             </div>
             <div class="col-12 col-md-4">
                 <div class="p-4 bg-white rounded-3 shadow-sm text-center border-top border-success border-4">
                     <h6 class="text-uppercase text-muted small">Totale Incassato (Lordo)</h6>
-                    <h2 class="display-5 fw-bold text-success">€ {{ "%.2f"|format(rep_incasso) }}</h2>
+                    <h2 class="display-5 fw-bold text-success">€ {{ "%.2f"|format(rep_incasso or 0) }}</h2>
                 </div>
             </div>
             <div class="col-12 col-md-4">
                 <div class="p-4 bg-white rounded-3 shadow-sm text-center border-top border-info border-4">
                     <h6 class="text-uppercase text-muted small">Guadagno Netto Reale</h6>
-                    <h2 class="display-5 fw-bold text-info">€ {{ "%.2f"|format(rep_guadagno) }}</h2>
+                    <h2 class="display-5 fw-bold text-info">€ {{ "%.2f"|format(rep_guadagno or 0) }}</h2>
                 </div>
             </div>
         </div>
