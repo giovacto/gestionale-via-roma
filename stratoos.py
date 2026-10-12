@@ -8,6 +8,7 @@ BASE_URL = "https://app.stratoos.com/api/v1"
 
 _modelli_sincronizzati_cache = set()
 
+
 def ottieni_access_token():
     """Richiede il token di accesso a Stratoos via API Key."""
     url = f"{BASE_URL}/auth"
@@ -24,6 +25,7 @@ def ottieni_access_token():
     except Exception as e:
         logging.error(f"[STRATOOS AUTH EXCEPTION]: {e}")
         return None
+
 
 def ottieni_mappa_prodotti_stratoos(token):
     """Mappa i prodotti esistenti per identificare i prodotti padre."""
@@ -49,13 +51,14 @@ def ottieni_mappa_prodotti_stratoos(token):
         logging.error(f"[STRATOOS GET PRODUCTS EXCEPTION]: {e}")
         return {}
 
+
 def _gestisci_entita(token, endpoint_name, nome_entita):
     """Gestisce Brand e Categorie sotto /syncs/17/manufacturers e /syncs/17/categories."""
     if not nome_entita:
         return None
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     url = f"{BASE_URL}/syncs/{SYNC_ID}/{endpoint_name}"
-    
+
     # 1. Cerca se l'entità esiste già
     try:
         res_get = requests.get(url, headers=headers, timeout=10)
@@ -63,11 +66,14 @@ def _gestisci_entita(token, endpoint_name, nome_entita):
             dati = res_get.json().get("data", [])
             for item in dati:
                 for lang in item.get("langs", []):
-                    if str(lang.get("name", "")).strip().lower() == str(nome_entita).strip().lower():
+                    if (
+                        str(lang.get("name", "")).strip().lower()
+                        == str(nome_entita).strip().lower()
+                    ):
                         return item.get("id")
     except Exception:
         pass
-        
+
     # 2. Crea l'entità se non trovata
     try:
         payload = {"langs": [{"lang_id": 1, "name": str(nome_entita)}]}
@@ -78,91 +84,92 @@ def _gestisci_entita(token, endpoint_name, nome_entita):
         pass
     return None
 
+
 def sincronizza_anagrafica_articolo(articolo, token, mappa):
-    """Invia il Prodotto Padre con Brand, Categoria e l'array 'children' con tutte le Varianti."""
+    """Invia il Prodotto Padre con il Brand associato tramite manufacturer_id."""
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-    
+
     brand_nome = articolo.fornitore.nome if articolo.fornitore else articolo.brand
     brand_id = _gestisci_entita(token, "manufacturers", brand_nome or "Via Roma")
-    cat_id = _gestisci_entita(token, "categories", articolo.tipologia or "Generico")
-
-    # Struttura delle varianti (children)
-    children_list = []
-    for var in articolo.varianti:
-        children_list.append({
-            "ean13": str(var.barcode).strip(),
-            "reference": f"{articolo.codice_modello}-{var.taglia_numero}",
-            "price": float(articolo.prezzo_listino or 0.0),
-            "langs": [{"lang_id": 1, "name": f"{articolo.nome} - Colore: {var.colore} - Taglia: {var.taglia_numero}"}]
-        })
 
     payload_padre = {
         "price": float(articolo.prezzo_listino or 0.0),
         "reference": str(articolo.codice_modello),
         "langs": [{"lang_id": 1, "name": str(articolo.nome)}],
-        "children": children_list
     }
-    
+
     if brand_id:
-        payload_padre["manufacturer"] = {"id": brand_id}
-    if cat_id:
-        payload_padre["categories"] = [{"id": cat_id}]
+        payload_padre["manufacturer_id"] = int(brand_id)
 
     chiave_modello = str(articolo.codice_modello).strip().lower()
-    
+
     try:
         if chiave_modello in mappa:
             product_id = mappa[chiave_modello]
-            res = requests.put(f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}", json=payload_padre, headers=headers, timeout=10)
+            res = requests.put(
+                f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}",
+                json=payload_padre,
+                headers=headers,
+                timeout=10,
+            )
         else:
-            res = requests.post(f"{BASE_URL}/syncs/{SYNC_ID}/products", json=payload_padre, headers=headers, timeout=10)
-        
+            res = requests.post(
+                f"{BASE_URL}/syncs/{SYNC_ID}/products",
+                json=payload_padre,
+                headers=headers,
+                timeout=10,
+            )
+
         return res.status_code in [200, 201, 204]
     except Exception as e:
         logging.error(f"[STRATOOS PRODUCT SYNC ERROR] {e}")
         return False
 
+
 def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
     """Sincronizza anagrafica e poi aggiorna le quantità su Stratoos."""
     global _modelli_sincronizzati_cache
-    
+
     token = ottieni_access_token()
     if not token:
         print("[STRATOOS UPDATE STOCK]: Token non ottenuto.")
         return False
-        
+
     chiave_modello = str(codice_modello).strip().lower() if codice_modello else ""
-    
+
     # 1. Sincronizzazione anagrafica se non ancora eseguita in questa sessione
     try:
         if chiave_modello and chiave_modello not in _modelli_sincronizzati_cache:
             from database.models import VarianteArticolo
-            variante = VarianteArticolo.query.filter_by(barcode=str(barcode).strip()).first()
+
+            variante = VarianteArticolo.query.filter_by(
+                barcode=str(barcode).strip()
+            ).first()
             if variante and variante.articolo:
                 mappa_temp = ottieni_mappa_prodotti_stratoos(token)
                 sincronizza_anagrafica_articolo(variante.articolo, token, mappa_temp)
                 _modelli_sincronizzati_cache.add(chiave_modello)
     except Exception as e:
         print(f"[STRATOOS ANAGRAFICA EXCEPTION]: {e}")
-        
+
     # 2. Sincronizzazione Stock
     url_products = f"{BASE_URL}/syncs/{SYNC_ID}/products"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    
+
     try:
         res = requests.get(url_products, headers=headers, timeout=10)
         if res.status_code != 200:
             return False
         lista_prodotti = res.json().get("data", [])
-        
+
         product_id = None
         product_child_id = None
         chiave_barcode = str(barcode).strip()
-        
+
         for p in lista_prodotti:
             p_ref = str(p.get("reference", "")).strip().lower()
             if p_ref == chiave_modello:
@@ -176,7 +183,9 @@ def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
                 break
 
         if not product_id:
-            print(f"[STRATOOS UPDATE STOCK]: Prodotto non trovato per Barcode '{barcode}' o Modello '{codice_modello}'.")
+            print(
+                f"[STRATOOS UPDATE STOCK]: Prodotto non trovato per Barcode '{barcode}' o Modello '{codice_modello}'."
+            )
             return False
 
         url_stock = f"{BASE_URL}/syncs/{SYNC_ID}/stocks"
@@ -192,7 +201,9 @@ def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
         if product_child_id:
             payload["product_child_id"] = product_child_id
 
-        res_stock = requests.post(url_stock, json=payload, headers=headers_post, timeout=10)
+        res_stock = requests.post(
+            url_stock, json=payload, headers=headers_post, timeout=10
+        )
         if res_stock.status_code in [200, 201, 204]:
             print(f"[STRATOOS SUCCESS]: Giacenza aggiornata (Qta: {nuova_giacenza})")
             return True
