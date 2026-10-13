@@ -28,55 +28,91 @@ def ottieni_access_token():
 
 
 def ottieni_mappa_prodotti_stratoos(token):
-    """Mappa i prodotti esistenti per identificare i prodotti padre."""
-    url = f"{BASE_URL}/syncs/{SYNC_ID}/products"
+    """Mappa i prodotti esistenti per identificare i prodotti padre (legge TUTTE le pagine per evitare duplicati)."""
+    mappa = {}
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return {}
-        risposta_json = response.json()
-        lista_prodotti = risposta_json.get("data", [])
-        mappa = {}
-        for p in lista_prodotti:
-            p_id = p.get("id")
-            ref_modello = p.get("reference")
-            ean_padre = p.get("ean13")
-            if ref_modello:
-                mappa[str(ref_modello).strip().lower()] = p_id
-            if ean_padre:
-                mappa[str(ean_padre).strip()] = p_id
-        return mappa
-    except Exception as e:
-        logging.error(f"[STRATOOS GET PRODUCTS EXCEPTION]: {e}")
-        return {}
+    page = 1
+    while True:
+        url = f"{BASE_URL}/syncs/{SYNC_ID}/products?page={page}"
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                break
+            risposta_json = response.json()
+            lista_prodotti = risposta_json.get("data", [])
+            if not lista_prodotti:
+                break
+
+            for p in lista_prodotti:
+                p_id = p.get("id")
+                ref_modello = p.get("reference")
+                ean_padre = p.get("ean13")
+                if ref_modello:
+                    mappa[str(ref_modello).strip().lower()] = p_id
+                if ean_padre:
+                    mappa[str(ean_padre).strip()] = p_id
+
+            # Controlla se c'è una pagina successiva
+            if not risposta_json.get("links", {}).get("next"):
+                break
+            page += 1
+        except Exception as e:
+            logging.error(f"[STRATOOS GET PRODUCTS EXCEPTION]: {e}")
+            break
+    return mappa
 
 
 def _gestisci_entita(token, endpoint_name, nome_entita):
-    """Gestisce Brand e Categorie sotto /syncs/17/manufacturers e /syncs/17/categories."""
+    """Gestisce Brand e Categorie sotto /syncs/17/manufacturers e /syncs/17/categories (inviando la reference)."""
     if not nome_entita:
         return None
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     url = f"{BASE_URL}/syncs/{SYNC_ID}/{endpoint_name}"
 
-    # 1. Cerca se l'entità esiste già
-    try:
-        res_get = requests.get(url, headers=headers, timeout=10)
-        if res_get.status_code == 200:
-            dati = res_get.json().get("data", [])
-            for item in dati:
-                for lang in item.get("langs", []):
-                    if (
-                        str(lang.get("name", "")).strip().lower()
-                        == str(nome_entita).strip().lower()
-                    ):
-                        return item.get("id")
-    except Exception:
-        pass
+    # Creiamo una reference pulita (es. "NEROGIARDINI BAG" -> "NEROGIARDINI_BAG")
+    reference_val = str(nome_entita).strip().upper().replace(" ", "_")
 
-    # 2. Crea l'entità se non trovata
+    # 1. Cerca se l'entità esiste già
+    page = 1
+    found_id = None
+    while True:
+        try:
+            res_get = requests.get(f"{url}?page={page}", headers=headers, timeout=10)
+            if res_get.status_code == 200:
+                data_json = res_get.json()
+                dati = data_json.get("data", [])
+                if not dati:
+                    break
+
+                for item in dati:
+                    if item.get("reference") == reference_val:
+                        found_id = item.get("id")
+                        break
+                    for lang in item.get("langs", []):
+                        if (
+                            str(lang.get("name", "")).strip().lower()
+                            == str(nome_entita).strip().lower()
+                        ):
+                            found_id = item.get("id")
+                            break
+
+                if found_id or not data_json.get("links", {}).get("next"):
+                    break
+                page += 1
+            else:
+                break
+        except Exception:
+            break
+
+    if found_id:
+        return found_id
+
+    # 2. Crea l'entità INCLUDENDO IL CAMPO REFERENCE RICHIESTO DA ALESSIO
     try:
-        payload = {"langs": [{"lang_id": 1, "name": str(nome_entita)}]}
+        payload = {
+            "reference": reference_val,
+            "langs": [{"lang_id": 1, "name": str(nome_entita)}],
+        }
         res_post = requests.post(url, json=payload, headers=headers, timeout=10)
         if res_post.status_code in [200, 201]:
             return res_post.json().get("data", {}).get("id")
