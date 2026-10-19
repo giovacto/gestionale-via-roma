@@ -111,7 +111,7 @@ def dashboard():
         "dashboard.html",
         totale_incassato=totale_incassato,
         totale_guadagnato=totale_guadagnato,
-        pezzi_oggi=pezzi_oggi,
+        totale_pezzi=pezzi_oggi,
         scadenze_attive=scadenze_attive,
     )
 
