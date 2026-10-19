@@ -12,9 +12,16 @@ _cache_attributi = {}
 
 
 def ottieni_access_token():
-    """Richiede il token di accesso a Stratoos via API Key."""
+    """Richiede il token di accesso a Stratoos via Email, Password e API Key."""
     url = f"{BASE_URL}/auth"
-    payload = {"apiKey": API_KEY}
+
+    # Inserisci qui la nuova password che hai decifrato da Synology C2
+    payload = {
+        "email": "viaromacalzature.store@gmail.com",
+        "password": "GPj#vm0$pf9Q",
+        "apiKey": API_KEY,
+    }
+
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
@@ -23,6 +30,10 @@ def ottieni_access_token():
             if "data" in data and "accessToken" in data["data"]:
                 return data["data"]["accessToken"]
             return data.get("access_token") or data.get("token")
+        else:
+            logging.error(
+                f"[STRATOOS AUTH FAILED]: HTTP {response.status_code} - {response.text}"
+            )
         return None
     except Exception as e:
         logging.error(f"[STRATOOS AUTH EXCEPTION]: {e}")
