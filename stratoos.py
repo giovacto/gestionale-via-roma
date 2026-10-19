@@ -215,15 +215,22 @@ def _gestisci_attributo(token, group_id, valore_attributo):
 
 
 def sincronizza_anagrafica_articolo(articolo, token, mappa):
-    """Sincronizza Prodotto Padre e le relative varianti figlie."""
+    """Sincronizza Prodotto Padre, gestisce le categorie e le relative varianti figlie."""
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
 
+    # 1. Gestione Brand
     brand_nome = articolo.fornitore.nome if articolo.fornitore else articolo.brand
     brand_id = _gestisci_entita(token, "manufacturers", brand_nome or "Via Roma")
+
+    # 2. Gestione Categoria (Tipologia Articolo)
+    categoria_id = None
+    if hasattr(articolo, "tipologia") and articolo.tipologia:
+        # Usa _gestisci_entita per creare/trovare la categoria sull'endpoint 'categories'
+        categoria_id = _gestisci_entita(token, "categories", articolo.tipologia)
 
     payload_padre = {
         "price": float(articolo.prezzo_listino or 0.0),
@@ -237,6 +244,7 @@ def sincronizza_anagrafica_articolo(articolo, token, mappa):
     product_id = mappa.get(chiave_modello)
 
     try:
+        # 3. Creazione o Aggiornamento Prodotto
         if product_id:
             requests.put(
                 f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}",
@@ -255,6 +263,18 @@ def sincronizza_anagrafica_articolo(articolo, token, mappa):
                 product_id = res_post.json().get("data", {}).get("id")
                 mappa[chiave_modello] = product_id
 
+        # 4. Assegnazione Categorie (Il "Passo 2" della guida)
+        if product_id and categoria_id:
+            payload_categoria = {"categories": [{"id": int(categoria_id)}]}
+            # Stratoos richiede una PUT per assegnare la categoria
+            requests.put(
+                f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}",
+                json=payload_categoria,
+                headers=headers,
+                timeout=10,
+            )
+
+        # 5. Sincronizzazione Varianti
         if product_id and hasattr(articolo, "varianti") and articolo.varianti:
             sincronizza_varianti_prodotto(articolo, product_id, token)
 
