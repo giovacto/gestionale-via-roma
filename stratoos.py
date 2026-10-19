@@ -121,6 +121,11 @@ def _gestisci_entita(token, endpoint_name, nome_entita):
             "reference": reference_val,
             "langs": [{"lang_id": 1, "name": str(nome_entita)}],
         }
+
+        # Aggiunta fondamentale richiesta da Stratoos per le Categorie!
+        if endpoint_name == "categories":
+            payload["parent_id"] = None
+
         res_post = requests.post(url, json=payload, headers=headers, timeout=10)
         if res_post.status_code in [200, 201]:
             return res_post.json().get("data", {}).get("id")
