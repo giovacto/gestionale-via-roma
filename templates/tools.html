@@ -38,6 +38,88 @@
         {% endif %}
         {% endwith %}
 
+        <!-- SEZIONE STORNO RAPIDO VENDITE RECENTI -->
+        <div class="card shadow-sm mb-4 border-0 rounded-3">
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1 fw-bold text-dark">
+                        ↩️ Ultime Vendite Registrate (Storno Rapido)
+                    </h5>
+                    <small class="text-muted">In caso di doppio scontrino o errore in cassa, clicca su "Annulla": la
+                        cassa si riallinea e i pezzi tornano automaticamente in magazzino.</small>
+                </div>
+                <span
+                    class="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-2 rounded-pill fw-bold">
+                    Ripristino Automatico Giacenze
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3" style="width: 100px;">Scontrino</th>
+                                <th style="width: 160px;">Data / Ora</th>
+                                <th>Articoli nello Scontrino</th>
+                                <th style="width: 140px;">Totale</th>
+                                <th class="text-end pe-3" style="width: 160px;">Azione</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for v in ultime_vendite %}
+                            <tr>
+                                <td class="ps-3 fw-bold text-secondary">#{{ v.id }}</td>
+                                <td class="text-muted small">
+                                    {{ v.data_vendita.strftime('%d/%m/%Y %H:%M') if v.data_vendita else '-' }}
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column gap-1">
+                                        {% for d in v.dettagli %}
+                                        <div class="small">
+                                            <span class="badge bg-secondary me-1">{{ d.quantita }}x</span>
+                                            <strong>{{ d.variante.articolo.nome if d.variante and d.variante.articolo
+                                                else 'Articolo' }}</strong>
+                                            <span class="text-muted">
+                                                ({{ d.variante.colore if d.variante else '-' }}, Tg. {{
+                                                d.variante.taglia_numero if d.variante else '-' }})
+                                            </span>
+                                            <span class="text-success fw-bold ms-1">€ {{
+                                                "%.2f"|format(d.prezzo_singolo_venduto) }}</span>
+                                        </div>
+                                        {% else %}
+                                        <span class="text-muted fst-italic small">Nessun articolo associato</span>
+                                        {% endfor %}
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="fs-6 fw-bold text-success">
+                                        € {{ "%.2f"|format(v.importo_totale_incassato or 0.0) }}
+                                    </span>
+                                </td>
+                                <td class="text-end pe-3">
+                                    <form action="/storna-vendita/{{ v.id }}" method="POST" class="d-inline"
+                                        onsubmit="return confermaStorno('{{ v.id }}', '{{ "
+                                        %.2f"|format(v.importo_totale_incassato or 0.0) }}');">
+                                        <button type="submit"
+                                            class="btn btn-outline-danger btn-sm fw-bold rounded-pill px-3">
+                                            🗑️ Annulla
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="5" class="text-center py-3 text-muted">
+                                    Nessuna vendita registrata di recente.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <div class="card shadow-sm p-3 mb-4 bg-white">
             <input type="text" id="ricerca_input" class="form-control form-control-lg text-center"
                 placeholder="🔍 Digita Modello, Marca, Colore o spara un Barcode per filtrare..."
@@ -196,6 +278,10 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        function confermaStorno(id, totale) {
+            return confirm("Vuoi davvero annullare la vendita #" + id + " di € " + totale + "?\n\nI pezzi venduti verranno automaticamente reinseriti a magazzino e la cassa verrà allineata.");
+        }
+
         function filtraTabella() {
             let input = document.getElementById("ricerca_input").value.toUpperCase();
             let rows = document.getElementById("tabella_magazzino").getElementsByTagName("tr");

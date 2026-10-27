@@ -1,4 +1,5 @@
 import os
+import threading
 from datetime import datetime, date
 from functools import wraps
 from flask import (
@@ -42,12 +43,33 @@ with app.app_context():
     db.create_all()
 
 
+def sincronizza_stratoos_async(barcode, codice_modello, nuova_giacenza):
+    """Esegue la chiamata di sincronizzazione giacenza verso Stratoos in un thread separato,
+
+    rendendo l'interfaccia istantanea e senza attese per l'utente.
+    """
+
+    def _sync():
+        try:
+            aggiorna_giacenza_stratoos(
+                barcode=barcode,
+                codice_modello=codice_modello,
+                nuova_giacenza=nuova_giacenza,
+            )
+        except Exception as e:
+            print(f"Errore sync asincrona Stratoos ({barcode}): {e}")
+
+    thread = threading.Thread(target=_sync, daemon=True)
+    thread.start()
+
+
 # -------------------------------------------------------------------
 # SISTEMA DI LOGIN
 # -------------------------------------------------------------------
 
 
 def login_required(f):
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get("logged_in"):
@@ -194,15 +216,12 @@ def carico():
             conteggio_inseriti += qta
             db.session.commit()
 
-            # Sincronizzazione automatica giacenza su Stratoos
-            try:
-                aggiorna_giacenza_stratoos(
-                    barcode=var_target.barcode,
-                    codice_modello=articolo.codice_modello,
-                    nuova_giacenza=var_target.giacenza,
-                )
-            except Exception as e:
-                print(f"Errore sincronizzazione Stratoos: {e}")
+            # Sincronizzazione asincrona su Stratoos
+            sincronizza_stratoos_async(
+                barcode=var_target.barcode,
+                codice_modello=articolo.codice_modello,
+                nuova_giacenza=var_target.giacenza,
+            )
 
         flash(f"⚓ Movimentati {conteggio_inseriti} pezzi con successo!", "success")
         return redirect("/carico")
@@ -367,14 +386,12 @@ def API_vendi():
         if variante.giacenza > 0:
             variante.giacenza -= 1
 
-        try:
-            aggiorna_giacenza_stratoos(
-                barcode=variante.barcode,
-                codice_modello=variante.articolo.codice_modello,
-                nuova_giacenza=variante.giacenza,
-            )
-        except Exception:
-            pass
+        # Sincronizzazione asincrona immediata
+        sincronizza_stratoos_async(
+            barcode=variante.barcode,
+            codice_modello=variante.articolo.codice_modello,
+            nuova_giacenza=variante.giacenza,
+        )
 
         totale_incassato += prezzo_finale
         totale_guadagnato += guadagno_pezzo
@@ -411,7 +428,6 @@ def fornitori():
         flash(f"✅ Fornitore '{nome}' aggiunto con successo!", "success")
         return redirect(url_for("fornitori"))
 
-    # Ordina in ordine alfabetico i fornitori
     lista_fornitori = Fornitore.query.order_by(Fornitore.nome.asc()).all()
     return render_template("fornitori.html", fornitori=lista_fornitori)
 
@@ -497,7 +513,51 @@ def report():
 def tools():
     varianti = VarianteArticolo.query.all()
     fornitori_list = Fornitore.query.order_by(Fornitore.nome.asc()).all()
-    return render_template("tools.html", varianti=varianti, fornitori=fornitori_list)
+    ultime_vendite = Vendita.query.order_by(Vendita.data_vendita.desc()).limit(10).all()
+
+    return render_template(
+        "tools.html",
+        varianti=varianti,
+        fornitori=fornitori_list,
+        ultime_vendite=ultime_vendite,
+    )
+
+
+@app.route("/storna-vendita/<int:vendita_id>", methods=["POST"])
+@login_required
+def storna_vendita(vendita_id):
+    vendita = Vendita.query.get_or_404(vendita_id)
+
+    try:
+        # 1. Reintegro giacenze
+        for dett in vendita.dettagli:
+            variante = dett.variante
+            if variante:
+                variante.giacenza += dett.quantita
+                # Sincronizzazione asincrona senza attendere la risposta HTTP
+                sincronizza_stratoos_async(
+                    barcode=variante.barcode,
+                    codice_modello=variante.articolo.codice_modello,
+                    nuova_giacenza=variante.giacenza,
+                )
+
+            # 2. Eliminazione dettaglio
+            db.session.delete(dett)
+
+        # 3. Eliminazione vendita
+        db.session.delete(vendita)
+        db.session.commit()
+
+        flash(
+            f"✅ Vendita #{vendita_id} annullata con successo! Giacenza ripristinata e cassa allineata.",
+            "success",
+        )
+    except Exception as e:
+        db.session.rollback()
+        print(f"Errore storno vendita #{vendita_id}: {e}")
+        flash(f"❌ Errore durante l'annullamento della vendita: {e}", "danger")
+
+    return redirect(url_for("tools"))
 
 
 @app.route("/tools/regola/<int:variante_id>/<azione>", methods=["POST"])
@@ -522,15 +582,12 @@ def regola_giacenza(variante_id, azione):
 
     db.session.commit()
 
-    # Sincronizzazione automatica con Stratoos
-    try:
-        aggiorna_giacenza_stratoos(
-            barcode=variante.barcode,
-            codice_modello=variante.articolo.codice_modello,
-            nuova_giacenza=variante.giacenza,
-        )
-    except Exception as e:
-        print(f"Errore sincronizzazione Stratoos: {e}")
+    # Sincronizzazione asincrona
+    sincronizza_stratoos_async(
+        barcode=variante.barcode,
+        codice_modello=variante.articolo.codice_modello,
+        nuova_giacenza=variante.giacenza,
+    )
 
     return redirect(url_for("tools"))
 
@@ -554,15 +611,12 @@ def modifica_variante(variante_id):
 
     db.session.commit()
 
-    # Sincronizzazione automatica con Stratoos
-    try:
-        aggiorna_giacenza_stratoos(
-            barcode=variante.barcode,
-            codice_modello=articolo.codice_modello,
-            nuova_giacenza=variante.giacenza,
-        )
-    except Exception as e:
-        print(f"Errore sincronizzazione Stratoos: {e}")
+    # Sincronizzazione asincrona
+    sincronizza_stratoos_async(
+        barcode=variante.barcode,
+        codice_modello=articolo.codice_modello,
+        nuova_giacenza=variante.giacenza,
+    )
 
     flash("✏️ Dettagli articolo modificati con successo!", "success")
     return redirect(url_for("tools"))
