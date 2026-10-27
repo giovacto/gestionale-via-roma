@@ -4,3 +4,4 @@ __pycache__/
 instance/
 magazzino.db
 .DS_Store
+*.db
