@@ -1,6 +1,5 @@
 import sys
 import os
-import time
 import requests
 
 # Imposta automaticamente la cartella di lavoro corrente sul percorso dello script
@@ -10,38 +9,36 @@ if CARTELLA_PROGETTO not in sys.path:
     sys.path.append(CARTELLA_PROGETTO)
 
 from app import app
-from database.models import db, VarianteArticolo, Vendita, DettaglioVendita
-
-API_KEY = "pd6ShL8fD3Q9TfbUTcsV0domKu00nkcJ"
-SYNC_ID = 17
-BASE_URL = "https://app.stratoos.com/api/v1"
+from database.models import db, Articolo, VarianteArticolo, Vendita, DettaglioVendita
+import stratoos
 
 
 def controlla_nuovi_ordini_web():
     """Controlla gli ordini web su Stratoos e aggiorna il DB locale."""
     print("🔄 Avvio controllo ordini online...")
 
-    # 1. Autenticazione
-    res_auth = requests.post(
-        f"{BASE_URL}/auth",
-        json={"apiKey": API_KEY},
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-        timeout=10,
-    )
-    if res_auth.status_code != 200:
+    # 1. Autenticazione centralizzata e robusta tramite stratoos.py
+    token = stratoos.ottieni_access_token()
+    if not token:
         print("❌ Impossibile autenticarsi su Stratoos.")
         return
 
-    token = res_auth.json().get("data", {}).get("accessToken")
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     # 2. Richiesta ordini pendenti
-    res_orders = requests.get(
-        f"{BASE_URL}/syncs/{SYNC_ID}/orders?status=pending", headers=headers, timeout=10
-    )
+    try:
+        res_orders = requests.get(
+            f"{stratoos.BASE_URL}/syncs/{stratoos.SYNC_ID}/orders?status=pending",
+            headers=headers,
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"❌ Errore di connessione a Stratoos: {e}")
+        return
+
     if res_orders.status_code != 200:
         print(
-            f"ℹ️ Nessun nuovo ordine o endpoint non ancora attivo ({res_orders.status_code})."
+            f"ℹ️ Nessun ordine o endpoint non pronto (HTTP {res_orders.status_code})."
         )
         return
 
@@ -58,13 +55,43 @@ def controlla_nuovi_ordini_web():
             dettagli_da_salvare = []
 
             for item in ordine.get("items", []):
-                barcode = item.get("reference")
-                variante = VarianteArticolo.query.filter_by(barcode=barcode).first()
+                ean = item.get("ean13") or item.get("barcode")
+                ref = item.get("reference")
+                variante = None
+
+                # Ricerca 1: tramite Barcode EAN13
+                if ean:
+                    variante = VarianteArticolo.query.filter_by(
+                        barcode=str(ean).strip()
+                    ).first()
+
+                # Ricerca 2: se nel reference è finito il barcode a 13 cifre
+                if not variante and ref and str(ref).strip().isdigit():
+                    variante = VarianteArticolo.query.filter_by(
+                        barcode=str(ref).strip()
+                    ).first()
+
+                # Ricerca 3: se il reference è nel formato MODELLO-TAGLIA (es. I617421D/613-38)
+                if not variante and ref and "-" in str(ref):
+                    parti = str(ref).strip().rsplit("-", 1)
+                    if len(parti) == 2:
+                        cod_modello, taglia = parti
+                        art = Articolo.query.filter_by(
+                            codice_modello=cod_modello
+                        ).first()
+                        if art:
+                            variante = VarianteArticolo.query.filter(
+                                VarianteArticolo.articolo_id == art.id,
+                                (VarianteArticolo.taglia_numero == taglia)
+                                | (VarianteArticolo.taglia == taglia),
+                            ).first()
 
                 if variante and variante.giacenza > 0:
                     articolo = variante.articolo
-                    prezzo_vendita = float(item.get("price", articolo.prezzo_listino))
-                    guadagno = prezzo_vendita - articolo.prezzo_acquisto
+                    prezzo_listino = float(articolo.prezzo_listino or 0.0)
+                    prezzo_acquisto = float(articolo.prezzo_acquisto or 0.0)
+                    prezzo_vendita = float(item.get("price", prezzo_listino))
+                    guadagno = prezzo_vendita - prezzo_acquisto
 
                     # Decrementa magazzino locale
                     variante.giacenza -= 1
@@ -77,6 +104,10 @@ def controlla_nuovi_ordini_web():
                         prezzo_singolo_venduto=prezzo_vendita,
                     )
                     dettagli_da_salvare.append(dettaglio)
+                else:
+                    print(
+                        f"   ⚠️ Variante non trovata o esaurita per l'articolo: Ref={ref}, EAN={ean}"
+                    )
 
             if dettagli_da_salvare:
                 nuova_vendita = Vendita(
@@ -92,13 +123,4 @@ def controlla_nuovi_ordini_web():
 
 
 if __name__ == "__main__":
-    print("🚀 Servizio di Polling Ordini Avviato in Background...")
-    while True:
-        try:
-            controlla_nuovi_ordini_web()
-        except Exception as e:
-            print(f"⚠️ Errore imprevisto durante il controllo ordini: {e}")
-
-        # Mette il demone in pausa per 15 minuti (900 secondi)
-        print("💤 Attesa 15 minuti prima del prossimo controllo...\n")
-        time.sleep(900)
+    controlla_nuovi_ordini_web()
