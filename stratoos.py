@@ -1,7 +1,6 @@
 import logging
 import requests
 
-# Configurazione API Stratoos
 API_KEY = "pd6ShL8fD3Q9TfbUTcsV0domKu00nkcJ"
 SYNC_ID = 17
 BASE_URL = "https://app.stratoos.com/api/v1"
@@ -12,16 +11,12 @@ _cache_attributi = {}
 
 
 def ottieni_access_token():
-    """Richiede il token di accesso a Stratoos via Email, Password e API Key."""
     url = f"{BASE_URL}/auth"
-
-    # Inserisci qui la nuova password che hai decifrato da Synology C2
     payload = {
         "email": "viaromacalzature.store@gmail.com",
         "password": "GPj#vm0$pf9Q",
         "apiKey": API_KEY,
     }
-
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
@@ -41,7 +36,6 @@ def ottieni_access_token():
 
 
 def ottieni_mappa_prodotti_stratoos(token):
-    """Mappa i prodotti esistenti leggendo tutte le pagine per prevenire duplicati."""
     mappa = {}
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     page = 1
@@ -75,7 +69,6 @@ def ottieni_mappa_prodotti_stratoos(token):
 
 
 def _gestisci_entita(token, endpoint_name, nome_entita):
-    """Gestisce Brand e Categorie garantendo la presenza del campo reference."""
     if not nome_entita:
         return None
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
@@ -121,8 +114,6 @@ def _gestisci_entita(token, endpoint_name, nome_entita):
             "reference": reference_val,
             "langs": [{"lang_id": 1, "name": str(nome_entita)}],
         }
-
-        # Aggiunta fondamentale richiesta da Stratoos per le Categorie!
         if endpoint_name == "categories":
             payload["parent_id"] = None
 
@@ -135,7 +126,6 @@ def _gestisci_entita(token, endpoint_name, nome_entita):
 
 
 def _gestisci_gruppo_attributi(token, nome_gruppo="Taglia"):
-    """Recupera o crea l'AttributeGroup specificato."""
     global _cache_gruppi_attributi
     chiave = nome_gruppo.strip().lower()
     if chiave in _cache_gruppi_attributi:
@@ -177,7 +167,6 @@ def _gestisci_gruppo_attributi(token, nome_gruppo="Taglia"):
 
 
 def _gestisci_attributo(token, group_id, valore_attributo):
-    """Recupera o crea il singolo attributo all'interno di un AttributeGroup."""
     global _cache_attributi
     chiave = (group_id, str(valore_attributo).strip().lower())
     if chiave in _cache_attributi:
@@ -220,21 +209,17 @@ def _gestisci_attributo(token, group_id, valore_attributo):
 
 
 def sincronizza_anagrafica_articolo(articolo, token, mappa):
-    """Sincronizza Prodotto Padre, gestisce le categorie e le relative varianti figlie."""
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
 
-    # 1. Gestione Brand
     brand_nome = articolo.fornitore.nome if articolo.fornitore else articolo.brand
     brand_id = _gestisci_entita(token, "manufacturers", brand_nome or "Via Roma")
 
-    # 2. Gestione Categoria (Tipologia Articolo)
     categoria_id = None
     if hasattr(articolo, "tipologia") and articolo.tipologia:
-        # Usa _gestisci_entita per creare/trovare la categoria sull'endpoint 'categories'
         categoria_id = _gestisci_entita(token, "categories", articolo.tipologia)
 
     payload_padre = {
@@ -249,7 +234,6 @@ def sincronizza_anagrafica_articolo(articolo, token, mappa):
     product_id = mappa.get(chiave_modello)
 
     try:
-        # 3. Creazione o Aggiornamento Prodotto
         if product_id:
             requests.put(
                 f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}",
@@ -268,29 +252,34 @@ def sincronizza_anagrafica_articolo(articolo, token, mappa):
                 product_id = res_post.json().get("data", {}).get("id")
                 mappa[chiave_modello] = product_id
 
-        # 4. Assegnazione Categorie (Il "Passo 2" della guida)
-        if product_id and categoria_id:
-            payload_categoria = {"categories": [{"id": int(categoria_id)}]}
-            # Stratoos richiede una PUT per assegnare la categoria
-            requests.put(
-                f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}",
-                json=payload_categoria,
-                headers=headers,
-                timeout=10,
-            )
+        # Associazione Brand e Categoria
+        if product_id:
+            payload_assoc = {}
+            if categoria_id:
+                payload_assoc["categories"] = [{"id": int(categoria_id)}]
+            if brand_id:
+                payload_assoc["manufacturer_id"] = int(brand_id)
+                payload_assoc["manufacturers"] = [{"id": int(brand_id)}]
 
-        # 5. Sincronizzazione Varianti
+            if payload_assoc:
+                requests.put(
+                    f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}",
+                    json=payload_assoc,
+                    headers=headers,
+                    timeout=10,
+                )
+
+        # Sincronizzazione Varianti
         if product_id and hasattr(articolo, "varianti") and articolo.varianti:
             sincronizza_varianti_prodotto(articolo, product_id, token)
 
-        return True if product_id else False
+        return product_id
     except Exception as e:
         logging.error(f"[STRATOOS PRODUCT SYNC ERROR]: {e}")
-        return False
+        return None
 
 
 def sincronizza_varianti_prodotto(articolo, product_id, token):
-    """Crea o aggiorna le varianti (productChildren) associate al prodotto padre."""
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
@@ -319,9 +308,8 @@ def sincronizza_varianti_prodotto(articolo, product_id, token):
     group_taglia_id = _gestisci_gruppo_attributi(token, "Taglia")
 
     for v in articolo.varianti:
-        ref_variante = (
-            f"{articolo.codice_modello}-{v.taglia}" if v.taglia else str(v.barcode)
-        )
+        taglia = getattr(v, "taglia_numero", None) or getattr(v, "taglia", None) or "TU"
+        ref_variante = f"{articolo.codice_modello}-{taglia}"[:40]
         chiave_ref = ref_variante.strip().lower()
         chiave_ean = str(v.barcode).strip() if v.barcode else ""
 
@@ -331,14 +319,14 @@ def sincronizza_varianti_prodotto(articolo, product_id, token):
             continue
 
         options = []
-        if v.taglia and group_taglia_id:
-            attr_id = _gestisci_attributo(token, group_taglia_id, str(v.taglia))
+        if taglia and group_taglia_id:
+            attr_id = _gestisci_attributo(token, group_taglia_id, str(taglia))
             if attr_id:
                 options.append({"id": attr_id})
 
         payload_child = {
             "price": float(articolo.prezzo_listino or 0.0),
-            "reference": ref_variante[:40],
+            "reference": ref_variante,
             "options": options if options else None,
         }
         if (
@@ -355,7 +343,6 @@ def sincronizza_varianti_prodotto(articolo, product_id, token):
 
 
 def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
-    """Sincronizza anagrafica e varianti, aggiornando le quantità su Stratoos."""
     global _modelli_sincronizzati_cache
 
     token = ottieni_access_token()
@@ -413,7 +400,9 @@ def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
 
     payload = {
         "product_id": int(product_id),
-        "quantity": int(nuova_giacenza),
+        "quantity_available": int(nuova_giacenza),
+        "quantity_physical": int(nuova_giacenza),
+        "quantity_reserved": 0,
     }
     if product_child_id:
         payload["product_child_id"] = int(product_child_id)
