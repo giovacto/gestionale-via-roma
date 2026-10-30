@@ -312,18 +312,21 @@ def cerca_prodotti_cassa():
     if len(query) < 2:
         return jsonify([])
 
+    from database.models import Fornitore
+
     risultati = []
     varianti = (
         VarianteArticolo.query.join(Articolo)
+        .outerjoin(Fornitore, Articolo.fornitore_id == Fornitore.id)
         .filter(
             (func.lower(Articolo.nome).like(f"%{query}%"))
             | (func.lower(Articolo.codice_modello).like(f"%{query}%"))
             | (func.lower(VarianteArticolo.colore).like(f"%{query}%"))
+            | (func.lower(Fornitore.nome).like(f"%{query}%"))
         )
         .limit(20)
         .all()
     )
-
     for v in varianti:
         brand_nome = v.articolo.fornitore.nome if v.articolo.fornitore else "Via Roma"
         risultati.append(
@@ -342,7 +345,6 @@ def cerca_prodotti_cassa():
                 "barcode": v.barcode,
             }
         )
-
     return jsonify(risultati)
 
 
