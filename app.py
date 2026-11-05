@@ -1,6 +1,7 @@
 import os
 import threading
-from datetime import datetime, date
+import calendar
+from datetime import datetime, date, timedelta
 from functools import wraps
 from flask import (
     Flask,
@@ -113,6 +114,7 @@ def logout():
 @login_required
 def dashboard():
     oggi = date.today()
+    settimana_prossima = oggi + timedelta(days=7)
 
     # Preleva le vendite effettuate nella giornata di oggi
     vendite_oggi = Vendita.query.filter(
@@ -127,7 +129,15 @@ def dashboard():
         if hasattr(v, "dettagli") and v.dettagli:
             pezzi_oggi += sum(d.quantita for d in v.dettagli)
 
-    scadenze_attive = 0
+    # Conteggio scadenze vive (non pagate)
+    scadenze_da_pagare = Scadenza.query.filter_by(pagato=False).all()
+    scadenze_attive = len(scadenze_da_pagare)
+
+    # Scadenze critiche per gli avvisi
+    scadute = [s for s in scadenze_da_pagare if s.data_scadenza < oggi]
+    in_scadenza = [
+        s for s in scadenze_da_pagare if oggi <= s.data_scadenza <= settimana_prossima
+    ]
 
     return render_template(
         "dashboard.html",
@@ -135,6 +145,9 @@ def dashboard():
         totale_guadagnato=totale_guadagnato,
         totale_pezzi=pezzi_oggi,
         scadenze_attive=scadenze_attive,
+        num_scadute=len(scadute),
+        num_in_scadenza=len(in_scadenza),
+        oggi=oggi,
     )
 
 
@@ -624,10 +637,125 @@ def modifica_variante(variante_id):
     return redirect(url_for("tools"))
 
 
-@app.route("/scadenziario")
+def calcola_fine_mese(dt_base, mesi_in_avanti):
+    """Calcola l'ultimo giorno del mese dopo N mesi."""
+    anno = dt_base.year + (dt_base.month + mesi_in_avanti - 1) // 12
+    mese = (dt_base.month + mesi_in_avanti - 1) % 12 + 1
+    ultimo_giorno = calendar.monthrange(anno, mese)[1]
+    return date(anno, mese, ultimo_giorno)
+
+
+@app.route("/scadenziario", methods=["GET", "POST"])
 @login_required
 def scadenziario():
-    return render_template("scadenziario.html")
+    if request.method == "POST":
+        fornitore_id = request.form.get("fornitore_id")
+        descrizione_base = (
+            request.form.get("descrizione", "").strip() or "Fattura Fornitore"
+        )
+        importo_totale = float(request.form.get("importo") or 0.0)
+        dilazione = request.form.get("dilazione", "singola")
+        data_rif_str = request.form.get("data_riferimento")
+
+        if not data_rif_str:
+            data_rif = date.today()
+        else:
+            data_rif = datetime.strptime(data_rif_str, "%Y-%m-%d").date()
+
+        # Piani di pagamento rateali supportati
+        piani = {
+            "singola": [0],
+            "30": [30],
+            "30_60": [30, 60],
+            "30_60_90": [30, 60, 90],
+            "30_60_90_120": [30, 60, 90, 120],
+            "30_fm": ("fm", [1]),
+            "30_60_fm": ("fm", [1, 2]),
+            "30_60_90_fm": ("fm", [1, 2, 3]),
+            "60_90_120_fm": ("fm", [2, 3, 4]),
+        }
+
+        piano_scelto = piani.get(dilazione, [0])
+
+        # Se è scadenza singola con data specifica impostata a mano
+        if dilazione == "singola":
+            data_scadenza_str = request.form.get("data_scadenza")
+            data_scad = (
+                datetime.strptime(data_scadenza_str, "%Y-%m-%d").date()
+                if data_scadenza_str
+                else data_rif
+            )
+            scad = Scadenza(
+                fornitore_id=fornitore_id,
+                descrizione=descrizione_base,
+                importo=importo_totale,
+                data_scadenza=data_scad,
+                pagato=False,
+            )
+            db.session.add(scad)
+        else:
+            # Calcolo rate
+            is_fm = isinstance(piano_scelto, tuple) and piano_scelto[0] == "fm"
+            offsets = piano_scelto[1] if is_fm else piano_scelto
+            n_rate = len(offsets)
+
+            importo_rata = round(importo_totale / n_rate, 2)
+            somma_assegnata = 0.0
+
+            for i, offset in enumerate(offsets):
+                num_rata = i + 1
+                # Compensazione centesimi sull'ultima rata
+                if num_rata == n_rate:
+                    importo_effettivo = round(importo_totale - somma_assegnata, 2)
+                else:
+                    importo_effettivo = importo_rata
+                    somma_assegnata += importo_rata
+
+                if is_fm:
+                    dt_scadenza = calcola_fine_mese(data_rif, offset)
+                else:
+                    dt_scadenza = data_rif + timedelta(days=offset)
+
+                desc_rata = f"{descrizione_base} (Rata {num_rata}/{n_rate})"
+                scad = Scadenza(
+                    fornitore_id=fornitore_id,
+                    descrizione=desc_rata,
+                    importo=importo_effettivo,
+                    data_scadenza=dt_scadenza,
+                    pagato=False,
+                )
+                db.session.add(scad)
+
+        db.session.commit()
+        flash("✅ Scadenza/e create con successo!", "success")
+        return redirect(url_for("scadenziario"))
+
+    lista_fornitori = Fornitore.query.order_by(Fornitore.nome.asc()).all()
+    lista_scadenze = (
+        Scadenza.query.filter_by(pagato=False)
+        .order_by(Scadenza.data_scadenza.asc())
+        .all()
+    )
+
+    oggi = date.today()
+    return render_template(
+        "scadenziario.html",
+        fornitori=lista_fornitori,
+        scadenze=lista_scadenze,
+        oggi=oggi,
+    )
+
+
+@app.route("/scadenziario/paga/<int:id>", methods=["POST"])
+@login_required
+def paga_scadenza(id):
+    scadenza = Scadenza.query.get_or_404(id)
+    scadenza.pagato = True
+    db.session.commit()
+    flash(
+        f"✅ Fattura/Rata di {scadenza.fornitore.nome} segnata come pagata!", "success"
+    )
+    return redirect(url_for("scadenziario"))
 
 
 if __name__ == "__main__":

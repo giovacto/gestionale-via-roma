@@ -10,6 +10,14 @@
         body {
             background-color: #f4f6f9;
         }
+
+        .scaduta {
+            border-left: 5px solid #dc3545 !important;
+        }
+
+        .in-scadenza {
+            border-left: 5px solid #ffc107 !important;
+        }
     </style>
 </head>
 
@@ -21,47 +29,90 @@
             <h1 class="h2 mb-0">📅 Scadenziario Fornitori</h1>
         </div>
 
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
         <div class="row g-4">
-            <div class="col-12 col-md-4">
+            <!-- FORM INSERIMENTO SCADENZA / RATE -->
+            <div class="col-12 col-md-5">
                 <div class="card shadow-sm p-4 bg-white rounded-3">
-                    <h3 class="h5 text-danger border-bottom pb-2 mb-3">Aggiungi Scadenza</h3>
+                    <h3 class="h5 text-danger border-bottom pb-2 mb-3">Aggiungi Pagamento / Fattura</h3>
                     <form action="/scadenziario" method="POST">
                         <div class="mb-3">
                             <label class="form-label fw-bold">Fornitore</label>
-                            <select name="fornitore_id" class="form-select" required>
-                                <option value="">-- Seleziona --</option>
+                            <select name="fornitore_id" class="form-select form-select-lg" required>
+                                <option value="">-- Seleziona Fornitore --</option>
                                 {% for f in fornitori %}
                                 <option value="{{ f.id }}">{{ f.nome }}</option>
                                 {% endfor %}
                             </select>
                         </div>
+
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Descrizione / Nota</label>
+                            <label class="form-label fw-bold">Descrizione / N° Fattura</label>
                             <input type="text" name="descrizione" class="form-control"
-                                placeholder="es. Fattura scarpe autunno">
+                                placeholder="es. Fatt. 124 scarpe donna" required>
                         </div>
+
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Importo (€)</label>
-                            <input type="number" step="0.01" name="importo" class="form-control" placeholder="0.00"
-                                required>
+                            <label class="form-label fw-bold">Importo Totale (€)</label>
+                            <input type="number" step="0.01" name="importo" class="form-control form-control-lg fw-bold"
+                                placeholder="0.00" required>
                         </div>
+
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Data Scadenza</label>
-                            <input type="date" name="data_scadenza" class="form-control" required>
+                            <label class="form-label fw-bold">Data Fattura / Decorrenza</label>
+                            <input type="date" id="data_riferimento" name="data_riferimento" class="form-control"
+                                value="{{ oggi.strftime('%Y-%m-%d') }}" required>
                         </div>
-                        <button type="submit" class="btn btn-danger w-100 py-2 fw-bold mt-2">💾 SALVA SCADENZA</button>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Condizione di Pagamento</label>
+                            <select name="dilazione" id="select_dilazione" class="form-select"
+                                onchange="gestisciCampiData()">
+                                <option value="singola">Pagamento Unico (Data fissa a scelta)</option>
+                                <option value="30">30 Giorni Data Fattura (1 Rata)</option>
+                                <option value="30_60">30 / 60 Giorni (2 Rate uguali)</option>
+                                <option value="30_60_90" selected>30 / 60 / 90 Giorni (3 Rate uguali)</option>
+                                <option value="30_60_90_120">30 / 60 / 90 / 120 Giorni (4 Rate uguali)</option>
+                                <option value="30_fm">30 gg Fine Mese (1 Rata)</option>
+                                <option value="30_60_fm">30 / 60 gg Fine Mese (2 Rate uguali)</option>
+                                <option value="30_60_90_fm">30 / 60 / 90 gg Fine Mese (3 Rate uguali)</option>
+                                <option value="60_90_120_fm">60 / 90 / 120 gg Fine Mese (3 Rate uguali)</option>
+                            </select>
+                            <div class="form-text">Selezionando 30/60/90 il sistema divide l'importo e calcola le
+                                scadenze in automatico.</div>
+                        </div>
+
+                        <div class="mb-3" id="box_data_scadenza" style="display: none;">
+                            <label class="form-label fw-bold">Data Scadenza Unica</label>
+                            <input type="date" name="data_scadenza" class="form-control">
+                        </div>
+
+                        <button type="submit" class="btn btn-danger w-100 py-3 fw-bold mt-2 shadow-sm">
+                            💾 GENERA SCADENZE
+                        </button>
                     </form>
                 </div>
             </div>
 
-            <div class="col-12 col-md-8">
+            <!-- TABELLA FATTURE DA PAGARE -->
+            <div class="col-12 col-md-7">
                 <div class="card shadow-sm p-4 bg-white rounded-3">
-                    <h3 class="h5 text-secondary text-uppercase mb-3">Fatture da pagare</h3>
+                    <h3 class="h5 text-secondary text-uppercase mb-3">Fatture e Rate da Pagare</h3>
                     <div class="table-responsive">
-                        <table class="table table-striped align-middle">
-                            <thead>
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
                                 <tr>
-                                    <th>Fornitore / Nota</th>
+                                    <th>Fornitore e Dettaglio</th>
                                     <th>Scadenza</th>
                                     <th>Importo</th>
                                     <th class="text-end">Azione</th>
@@ -69,26 +120,38 @@
                             </thead>
                             <tbody>
                                 {% for scadenza in scadenze %}
-                                <tr>
+                                <tr
+                                    class="{% if scadenza.data_scadenza < oggi %}scaduta bg-danger bg-opacity-10{% elif scadenza.data_scadenza <= oggi %}in-scadenza bg-warning bg-opacity-10{% endif %}">
                                     <td>
                                         <strong>{{ scadenza.fornitore.nome }}</strong><br>
                                         <small class="text-muted">{{ scadenza.descrizione }}</small>
                                     </td>
-                                    <td><span class="badge bg-warning text-dark">{{
-                                            scadenza.data_scadenza.strftime('%d/%m/%Y') }}</span></td>
+                                    <td>
+                                        {% if scadenza.data_scadenza < oggi %} <span class="badge bg-danger">SCADUTA ({{
+                                            scadenza.data_scadenza.strftime('%d/%m/%Y') }})</span>
+                                            {% elif scadenza.data_scadenza == oggi %}
+                                            <span class="badge bg-warning text-dark">OGGI ({{
+                                                scadenza.data_scadenza.strftime('%d/%m/%Y') }})</span>
+                                            {% else %}
+                                            <span class="badge bg-secondary">{{
+                                                scadenza.data_scadenza.strftime('%d/%m/%Y') }}</span>
+                                            {% endif %}
+                                    </td>
                                     <td class="fw-bold text-danger">€ {{ "%.2f"|format(scadenza.importo) }}</td>
                                     <td class="text-end">
                                         <form action="/scadenziario/paga/{{ scadenza.id }}" method="POST"
                                             style="display:inline;">
-                                            <button type="submit" class="btn btn-success btn-sm fw-bold">✅ SEGNA
-                                                PAGATO</button>
+                                            <button type="submit" class="btn btn-success btn-sm fw-bold shadow-sm">
+                                                ✅ PAGATO
+                                            </button>
                                         </form>
                                     </td>
                                 </tr>
                                 {% else %}
                                 <tr>
-                                    <td colspan="4" class="text-center text-muted py-4">Evviva! Non ci sono fatture da
-                                        pagare al momento. 🎉</td>
+                                    <td colspan="4" class="text-center text-muted py-4">
+                                        Nessuna scadenza in sospeso. 🎉
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -99,6 +162,15 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function gestisciCampiData() {
+            let dilazione = document.getElementById('select_dilazione').value;
+            let box = document.getElementById('box_data_scadenza');
+            box.style.display = (dilazione === 'singola') ? 'block' : 'none';
+        }
+        gestisciCampiData();
+    </script>
 </body>
 
 </html>
