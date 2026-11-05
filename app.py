@@ -662,7 +662,6 @@ def scadenziario():
         else:
             data_rif = datetime.strptime(data_rif_str, "%Y-%m-%d").date()
 
-        # Piani di pagamento rateali supportati
         piani = {
             "singola": [0],
             "30": [30],
@@ -677,7 +676,6 @@ def scadenziario():
 
         piano_scelto = piani.get(dilazione, [0])
 
-        # Se è scadenza singola con data specifica impostata a mano
         if dilazione == "singola":
             data_scadenza_str = request.form.get("data_scadenza")
             data_scad = (
@@ -694,7 +692,6 @@ def scadenziario():
             )
             db.session.add(scad)
         else:
-            # Calcolo rate
             is_fm = isinstance(piano_scelto, tuple) and piano_scelto[0] == "fm"
             offsets = piano_scelto[1] if is_fm else piano_scelto
             n_rate = len(offsets)
@@ -704,7 +701,6 @@ def scadenziario():
 
             for i, offset in enumerate(offsets):
                 num_rata = i + 1
-                # Compensazione centesimi sull'ultima rata
                 if num_rata == n_rate:
                     importo_effettivo = round(importo_totale - somma_assegnata, 2)
                 else:
@@ -731,9 +727,19 @@ def scadenziario():
         return redirect(url_for("scadenziario"))
 
     lista_fornitori = Fornitore.query.order_by(Fornitore.nome.asc()).all()
+
+    # Scadenze aperte
     lista_scadenze = (
         Scadenza.query.filter_by(pagato=False)
         .order_by(Scadenza.data_scadenza.asc())
+        .all()
+    )
+
+    # Scadenze già pagate (ultime 50 saldate)
+    scadenze_saldate = (
+        Scadenza.query.filter_by(pagato=True)
+        .order_by(Scadenza.data_scadenza.desc())
+        .limit(50)
         .all()
     )
 
@@ -742,6 +748,7 @@ def scadenziario():
         "scadenziario.html",
         fornitori=lista_fornitori,
         scadenze=lista_scadenze,
+        scadenze_saldate=scadenze_saldate,
         oggi=oggi,
     )
 
@@ -754,6 +761,19 @@ def paga_scadenza(id):
     db.session.commit()
     flash(
         f"✅ Fattura/Rata di {scadenza.fornitore.nome} segnata come pagata!", "success"
+    )
+    return redirect(url_for("scadenziario"))
+
+
+@app.route("/scadenziario/riapri/<int:id>", methods=["POST"])
+@login_required
+def riapri_scadenza(id):
+    scadenza = Scadenza.query.get_or_404(id)
+    scadenza.pagato = False
+    db.session.commit()
+    flash(
+        f"🔄 Pagamento di {scadenza.fornitore.nome} ripristinato nello scadenziario attivo!",
+        "info",
     )
     return redirect(url_for("scadenziario"))
 

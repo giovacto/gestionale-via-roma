@@ -18,6 +18,11 @@
         .in-scadenza {
             border-left: 5px solid #ffc107 !important;
         }
+
+        .pagata-row {
+            border-left: 5px solid #198754 !important;
+            opacity: 0.85;
+        }
     </style>
 </head>
 
@@ -41,8 +46,8 @@
         {% endwith %}
 
         <div class="row g-4">
-            <!-- FORM INSERIMENTO SCADENZA / RATE -->
-            <div class="col-12 col-md-5">
+            <!-- COLONNA FORM: AGGIUNGI PAGAMENTO -->
+            <div class="col-12 col-lg-4">
                 <div class="card shadow-sm p-4 bg-white rounded-3">
                     <h3 class="h5 text-danger border-bottom pb-2 mb-3">Aggiungi Pagamento / Fattura</h3>
                     <form action="/scadenziario" method="POST">
@@ -88,8 +93,8 @@
                                 <option value="30_60_90_fm">30 / 60 / 90 gg Fine Mese (3 Rate uguali)</option>
                                 <option value="60_90_120_fm">60 / 90 / 120 gg Fine Mese (3 Rate uguali)</option>
                             </select>
-                            <div class="form-text">Selezionando 30/60/90 il sistema divide l'importo e calcola le
-                                scadenze in automatico.</div>
+                            <div class="form-text">Il sistema divide l'importo e calcola le scadenze in automatico.
+                            </div>
                         </div>
 
                         <div class="mb-3" id="box_data_scadenza" style="display: none;">
@@ -104,58 +109,128 @@
                 </div>
             </div>
 
-            <!-- TABELLA FATTURE DA PAGARE -->
-            <div class="col-12 col-md-7">
+            <!-- COLONNA TABELLE: DA PAGARE & STORICO PAGATI -->
+            <div class="col-12 col-lg-8">
                 <div class="card shadow-sm p-4 bg-white rounded-3">
-                    <h3 class="h5 text-secondary text-uppercase mb-3">Fatture e Rate da Pagare</h3>
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Fornitore e Dettaglio</th>
-                                    <th>Scadenza</th>
-                                    <th>Importo</th>
-                                    <th class="text-end">Azione</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for scadenza in scadenze %}
-                                <tr
-                                    class="{% if scadenza.data_scadenza < oggi %}scaduta bg-danger bg-opacity-10{% elif scadenza.data_scadenza <= oggi %}in-scadenza bg-warning bg-opacity-10{% endif %}">
-                                    <td>
-                                        <strong>{{ scadenza.fornitore.nome }}</strong><br>
-                                        <small class="text-muted">{{ scadenza.descrizione }}</small>
-                                    </td>
-                                    <td>
-                                        {% if scadenza.data_scadenza < oggi %} <span class="badge bg-danger">SCADUTA ({{
-                                            scadenza.data_scadenza.strftime('%d/%m/%Y') }})</span>
-                                            {% elif scadenza.data_scadenza == oggi %}
-                                            <span class="badge bg-warning text-dark">OGGI ({{
-                                                scadenza.data_scadenza.strftime('%d/%m/%Y') }})</span>
-                                            {% else %}
-                                            <span class="badge bg-secondary">{{
-                                                scadenza.data_scadenza.strftime('%d/%m/%Y') }}</span>
-                                            {% endif %}
-                                    </td>
-                                    <td class="fw-bold text-danger">€ {{ "%.2f"|format(scadenza.importo) }}</td>
-                                    <td class="text-end">
-                                        <form action="/scadenziario/paga/{{ scadenza.id }}" method="POST"
-                                            style="display:inline;">
-                                            <button type="submit" class="btn btn-success btn-sm fw-bold shadow-sm">
-                                                ✅ PAGATO
-                                            </button>
-                                        </form>
-                                    </td>
-                                </tr>
-                                {% else %}
-                                <tr>
-                                    <td colspan="4" class="text-center text-muted py-4">
-                                        Nessuna scadenza in sospeso. 🎉
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                    <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active fw-bold position-relative me-2" id="pills-dapagare-tab"
+                                data-bs-toggle="pill" data-bs-target="#pills-dapagare" type="button" role="tab">
+                                ⏳ Da Pagare
+                                {% if scadenze|length > 0 %}
+                                <span class="badge bg-danger ms-1">{{ scadenze|length }}</span>
+                                {% endif %}
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link fw-bold text-success" id="pills-storico-tab" data-bs-toggle="pill"
+                                data-bs-target="#pills-storico" type="button" role="tab">
+                                ✅ Storico Pagati ({{ scadenze_saldate|length }})
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content" id="pills-tabContent">
+                        <!-- TAB 1: FATTURE DA PAGARE -->
+                        <div class="tab-pane fade show active" id="pills-dapagare" role="tabpanel">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Fornitore e Dettaglio</th>
+                                            <th>Scadenza</th>
+                                            <th>Importo</th>
+                                            <th class="text-end">Azione</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for scadenza in scadenze %}
+                                        <tr
+                                            class="{% if scadenza.data_scadenza < oggi %}scaduta bg-danger bg-opacity-10{% elif scadenza.data_scadenza <= oggi %}in-scadenza bg-warning bg-opacity-10{% endif %}">
+                                            <td>
+                                                <strong>{{ scadenza.fornitore.nome }}</strong><br>
+                                                <small class="text-muted">{{ scadenza.descrizione }}</small>
+                                            </td>
+                                            <td>
+                                                {% if scadenza.data_scadenza < oggi %} <span class="badge bg-danger">
+                                                    SCADUTA ({{ scadenza.data_scadenza.strftime('%d/%m/%Y') }})</span>
+                                                    {% elif scadenza.data_scadenza == oggi %}
+                                                    <span class="badge bg-warning text-dark">OGGI ({{
+                                                        scadenza.data_scadenza.strftime('%d/%m/%Y') }})</span>
+                                                    {% else %}
+                                                    <span class="badge bg-secondary">{{
+                                                        scadenza.data_scadenza.strftime('%d/%m/%Y') }}</span>
+                                                    {% endif %}
+                                            </td>
+                                            <td class="fw-bold text-danger">€ {{ "%.2f"|format(scadenza.importo) }}</td>
+                                            <td class="text-end">
+                                                <form action="/scadenziario/paga/{{ scadenza.id }}" method="POST"
+                                                    style="display:inline;">
+                                                    <button type="submit"
+                                                        class="btn btn-success btn-sm fw-bold shadow-sm">
+                                                        ✅ SEGNA PAGATO
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        {% else %}
+                                        <tr>
+                                            <td colspan="4" class="text-center text-muted py-4">
+                                                Nessuna fattura in sospeso! 🎉
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- TAB 2: STORICO PAGAMENTI EFFETTUATI -->
+                        <div class="tab-pane fade" id="pills-storico" role="tabpanel">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Fornitore e Dettaglio</th>
+                                            <th>Data Scadenza</th>
+                                            <th>Importo Pagato</th>
+                                            <th class="text-end">Riapri</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for scadenza in scadenze_saldate %}
+                                        <tr class="pagata-row">
+                                            <td>
+                                                <strong>{{ scadenza.fornitore.nome }}</strong><br>
+                                                <small class="text-muted">{{ scadenza.descrizione }}</small>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-success">PAGATA ({{
+                                                    scadenza.data_scadenza.strftime('%d/%m/%Y') }})</span>
+                                            </td>
+                                            <td class="fw-bold text-success">€ {{ "%.2f"|format(scadenza.importo) }}
+                                            </td>
+                                            <td class="text-end">
+                                                <form action="/scadenziario/riapri/{{ scadenza.id }}" method="POST"
+                                                    style="display:inline;">
+                                                    <button type="submit" class="btn btn-outline-secondary btn-sm"
+                                                        title="Annulla pagamento e riporta tra quelle da pagare">
+                                                        ↩️ Riapri
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        {% else %}
+                                        <tr>
+                                            <td colspan="4" class="text-center text-muted py-4">
+                                                Nessun pagamento saldato registrato finora.
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
