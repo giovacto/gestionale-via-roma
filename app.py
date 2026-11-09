@@ -662,6 +662,52 @@ def scadenziario():
         else:
             data_rif = datetime.strptime(data_rif_str, "%Y-%m-%d").date()
 
+        # -------------------------------------------------------------
+        # CASO 1: PIANO LIBERO / RATE PERSONALIZZATE DA LOREDANA
+        # -------------------------------------------------------------
+        if dilazione == "libero":
+            date_rate = request.form.getlist("rate_data[]")
+            importi_rate = request.form.getlist("rate_importo[]")
+
+            rate_valide = []
+            for d_str, imp_str in zip(date_rate, importi_rate):
+                d_str = d_str.strip()
+                imp = float(imp_str or 0.0)
+                if d_str and imp > 0:
+                    rate_valide.append(
+                        (datetime.strptime(d_str, "%Y-%m-%d").date(), round(imp, 2))
+                    )
+
+            if not rate_valide:
+                flash(
+                    "⚠️ Devi inserire almeno una rata con data e importo validi!",
+                    "danger",
+                )
+                return redirect(url_for("scadenziario"))
+
+            n_rate = len(rate_valide)
+            for i, (dt_scad, imp_effettivo) in enumerate(rate_valide):
+                desc_rata = (
+                    f"{descrizione_base} (Rata {i+1}/{n_rate})"
+                    if n_rate > 1
+                    else descrizione_base
+                )
+                scad = Scadenza(
+                    fornitore_id=fornitore_id,
+                    descrizione=desc_rata,
+                    importo=imp_effettivo,
+                    data_scadenza=dt_scad,
+                    pagato=False,
+                )
+                db.session.add(scad)
+
+            db.session.commit()
+            flash(f"✅ Create con successo {n_rate} rate personalizzate!", "success")
+            return redirect(url_for("scadenziario"))
+
+        # -------------------------------------------------------------
+        # CASO 2: PIANI PREDEFINITI (30, 60, 90, FINE MESE, SINGOLA)
+        # -------------------------------------------------------------
         piani = {
             "singola": [0],
             "30": [30],
@@ -728,14 +774,12 @@ def scadenziario():
 
     lista_fornitori = Fornitore.query.order_by(Fornitore.nome.asc()).all()
 
-    # Scadenze aperte
     lista_scadenze = (
         Scadenza.query.filter_by(pagato=False)
         .order_by(Scadenza.data_scadenza.asc())
         .all()
     )
 
-    # Scadenze già pagate (ultime 50 saldate)
     scadenze_saldate = (
         Scadenza.query.filter_by(pagato=True)
         .order_by(Scadenza.data_scadenza.desc())

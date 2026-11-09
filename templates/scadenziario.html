@@ -23,6 +23,21 @@
             border-left: 5px solid #198754 !important;
             opacity: 0.85;
         }
+
+        .box-rate-libere {
+            background-color: #f8f9fa;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .riga-rata {
+            background-color: white;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+        }
     </style>
 </head>
 
@@ -47,10 +62,11 @@
 
         <div class="row g-4">
             <!-- COLONNA FORM: AGGIUNGI PAGAMENTO -->
-            <div class="col-12 col-lg-4">
+            <div class="col-12 col-lg-5">
                 <div class="card shadow-sm p-4 bg-white rounded-3">
                     <h3 class="h5 text-danger border-bottom pb-2 mb-3">Aggiungi Pagamento / Fattura</h3>
-                    <form action="/scadenziario" method="POST">
+                    <form action="/scadenziario" method="POST" id="form_scadenza"
+                        onsubmit="return validaInvioForm(event)">
                         <div class="mb-3">
                             <label class="form-label fw-bold">Fornitore</label>
                             <select name="fornitore_id" class="form-select form-select-lg" required>
@@ -69,8 +85,9 @@
 
                         <div class="mb-3">
                             <label class="form-label fw-bold">Importo Totale (€)</label>
-                            <input type="number" step="0.01" name="importo" class="form-control form-control-lg fw-bold"
-                                placeholder="0.00" required>
+                            <input type="number" step="0.01" id="importo_totale" name="importo"
+                                class="form-control form-control-lg fw-bold" placeholder="0.00"
+                                oninput="ricalcolaTotaliLibere()" required>
                         </div>
 
                         <div class="mb-3">
@@ -83,20 +100,52 @@
                             <label class="form-label fw-bold">Condizione di Pagamento</label>
                             <select name="dilazione" id="select_dilazione" class="form-select"
                                 onchange="gestisciCampiData()">
+                                <option value="libero" selected>✍️ Piano Libero / Rate Personalizzate (Manuale)</option>
                                 <option value="singola">Pagamento Unico (Data fissa a scelta)</option>
                                 <option value="30">30 Giorni Data Fattura (1 Rata)</option>
                                 <option value="30_60">30 / 60 Giorni (2 Rate uguali)</option>
-                                <option value="30_60_90" selected>30 / 60 / 90 Giorni (3 Rate uguali)</option>
+                                <option value="30_60_90">30 / 60 / 90 Giorni (3 Rate uguali)</option>
                                 <option value="30_60_90_120">30 / 60 / 90 / 120 Giorni (4 Rate uguali)</option>
                                 <option value="30_fm">30 gg Fine Mese (1 Rata)</option>
                                 <option value="30_60_fm">30 / 60 gg Fine Mese (2 Rate uguali)</option>
                                 <option value="30_60_90_fm">30 / 60 / 90 gg Fine Mese (3 Rate uguali)</option>
                                 <option value="60_90_120_fm">60 / 90 / 120 gg Fine Mese (3 Rate uguali)</option>
                             </select>
-                            <div class="form-text">Il sistema divide l'importo e calcola le scadenze in automatico.
+                            <div class="form-text">Con "Piano Libero" puoi creare quante rate desideri impostando data e
+                                importo per ciascuna.</div>
+                        </div>
+
+                        <!-- BOX PER RATE PERSONALIZZATE (LIBERO) -->
+                        <div id="box_rate_libere" class="box-rate-libere mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="fw-bold mb-0">Componi le Rate:</label>
+                                <button type="button" class="btn btn-sm btn-primary fw-bold"
+                                    onclick="aggiungiRataLibera()">
+                                    ➕ Aggiungi Rata
+                                </button>
+                            </div>
+
+                            <div id="container_rate_libere"></div>
+
+                            <!-- CONTATORE REAL TIME -->
+                            <div class="bg-white p-2 rounded border small mt-2">
+                                <div class="d-flex justify-content-between">
+                                    <span>Totale Fattura:</span>
+                                    <strong id="lbl_totale_fattura">€ 0.00</strong>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <span>Somma Rate Inserite:</span>
+                                    <strong id="lbl_somma_rate">€ 0.00</strong>
+                                </div>
+                                <hr class="my-1">
+                                <div class="d-flex justify-content-between fw-bold">
+                                    <span>Differenza Residua:</span>
+                                    <span id="lbl_residuo" class="text-danger">€ 0.00</span>
+                                </div>
                             </div>
                         </div>
 
+                        <!-- BOX PER DATA SINGOLA -->
                         <div class="mb-3" id="box_data_scadenza" style="display: none;">
                             <label class="form-label fw-bold">Data Scadenza Unica</label>
                             <input type="date" name="data_scadenza" class="form-control">
@@ -110,7 +159,7 @@
             </div>
 
             <!-- COLONNA TABELLE: DA PAGARE & STORICO PAGATI -->
-            <div class="col-12 col-lg-8">
+            <div class="col-12 col-lg-7">
                 <div class="card shadow-sm p-4 bg-white rounded-3">
                     <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
                         <li class="nav-item" role="presentation">
@@ -214,7 +263,7 @@
                                                 <form action="/scadenziario/riapri/{{ scadenza.id }}" method="POST"
                                                     style="display:inline;">
                                                     <button type="submit" class="btn btn-outline-secondary btn-sm"
-                                                        title="Annulla pagamento e riporta tra quelle da pagare">
+                                                        title="Riporta tra quelle da pagare">
                                                         ↩️ Riapri
                                                     </button>
                                                 </form>
@@ -241,9 +290,136 @@
     <script>
         function gestisciCampiData() {
             let dilazione = document.getElementById('select_dilazione').value;
-            let box = document.getElementById('box_data_scadenza');
-            box.style.display = (dilazione === 'singola') ? 'block' : 'none';
+            let boxSingola = document.getElementById('box_data_scadenza');
+            let boxLibere = document.getElementById('box_rate_libere');
+
+            boxSingola.style.display = (dilazione === 'singola') ? 'block' : 'none';
+            boxLibere.style.display = (dilazione === 'libero') ? 'block' : 'none';
+
+            if (dilazione === 'libero') {
+                let container = document.getElementById('container_rate_libere');
+                if (container.children.length === 0) {
+                    aggiungiRataLibera();
+                }
+                ricalcolaTotaliLibere();
+            }
         }
+
+        function aggiungiRataLibera() {
+            let container = document.getElementById('container_rate_libere');
+            let idx = container.children.length + 1;
+
+            // Calcola l'eventuale importo residuo ancora da coprire
+            let totFattura = parseFloat(document.getElementById('importo_totale').value) || 0.0;
+            let sommaAttuale = 0.0;
+            document.querySelectorAll('.input-rata-importo').forEach(el => {
+                sommaAttuale += parseFloat(el.value) || 0.0;
+            });
+            let residuoProposto = Math.max(0, totFattura - sommaAttuale);
+            let valDefault = residuoProposto > 0 ? residuoProposto.toFixed(2) : "";
+
+            let div = document.createElement('div');
+            div.className = 'riga-rata';
+            div.innerHTML = `
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                    <span class="small fw-bold text-secondary">Rata #${idx}</span>
+                    <button type="button" class="btn btn-link text-danger p-0 text-decoration-none btn-sm" onclick="rimuoviRataLibera(this)">
+                        🗑️ Rimuovi
+                    </button>
+                </div>
+                <div class="row g-2">
+                    <div class="col-7">
+                        <input type="date" name="rate_data[]" class="form-control form-control-sm" required>
+                    </div>
+                    <div class="col-5">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">€</span>
+                            <input type="number" step="0.01" name="rate_importo[]" 
+                                   class="form-control form-control-sm fw-bold input-rata-importo" 
+                                   placeholder="0.00" value="${valDefault}" 
+                                   oninput="ricalcolaTotaliLibere()" required>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(div);
+            rinominaIndiciRate();
+            ricalcolaTotaliLibere();
+        }
+
+        function rimuoviRataLibera(btn) {
+            let container = document.getElementById('container_rate_libere');
+            if (container.children.length <= 1) {
+                alert("Devi mantenere almeno una rata!");
+                return;
+            }
+            btn.closest('.riga-rata').remove();
+            rinominaIndiciRate();
+            ricalcolaTotaliLibere();
+        }
+
+        function rinominaIndiciRate() {
+            let righe = document.querySelectorAll('#container_rate_libere .riga-rata');
+            righe.forEach((r, i) => {
+                let badge = r.querySelector('span.small.fw-bold');
+                if (badge) badge.innerText = `Rata #${i + 1}`;
+            });
+        }
+
+        function ricalcolaTotaliLibere() {
+            let totFattura = parseFloat(document.getElementById('importo_totale').value) || 0.0;
+            let sommaRate = 0.0;
+
+            document.querySelectorAll('.input-rata-importo').forEach(el => {
+                sommaRate += parseFloat(el.value) || 0.0;
+            });
+
+            let diff = totFattura - sommaRate;
+
+            document.getElementById('lbl_totale_fattura').innerText = `€ ${totFattura.toFixed(2)}`;
+            document.getElementById('lbl_somma_rate').innerText = `€ ${sommaRate.toFixed(2)}`;
+
+            let lblResiduo = document.getElementById('lbl_residuo');
+            lblResiduo.innerText = `€ ${diff.toFixed(2)}`;
+
+            if (Math.abs(diff) < 0.01 && totFattura > 0) {
+                lblResiduo.className = "text-success fw-bold";
+                lblResiduo.innerText = "€ 0.00 (Coperto al 100% ✅)";
+            } else if (diff > 0) {
+                lblResiduo.className = "text-danger fw-bold";
+                lblResiduo.innerText = `€ ${diff.toFixed(2)} (Mancano)`;
+            } else {
+                lblResiduo.className = "text-warning text-dark fw-bold";
+                lblResiduo.innerText = `€ ${Math.abs(diff).toFixed(2)} (In eccesso)`;
+            }
+        }
+
+        function validaInvioForm(e) {
+            let dilazione = document.getElementById('select_dilazione').value;
+            if (dilazione === 'libero') {
+                let totFattura = parseFloat(document.getElementById('importo_totale').value) || 0.0;
+                let sommaRate = 0.0;
+                document.querySelectorAll('.input-rata-importo').forEach(el => {
+                    sommaRate += parseFloat(el.value) || 0.0;
+                });
+
+                let diff = Math.abs(totFattura - sommaRate);
+                if (diff > 0.05) {
+                    let procedi = confirm(
+                        `⚠️ Attenzione Loredana:\n` +
+                        `La somma delle rate inserite (€ ${sommaRate.toFixed(2)}) non coincide esattamente con il totale della fattura (€ ${totFattura.toFixed(2)}).\n\n` +
+                        `Vuoi salvare ugualmente le scadenze?`
+                    );
+                    if (!procedi) {
+                        e.preventDefault();
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        // Avvio all'apertura pagina
         gestisciCampiData();
     </script>
 </body>
