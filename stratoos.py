@@ -1,5 +1,6 @@
 import logging
 import requests
+import threading
 
 # Configurazione API Stratoos
 API_KEY = "pd6ShL8fD3Q9TfbUTcsV0domKu00nkcJ"
@@ -9,6 +10,7 @@ BASE_URL = "https://app.stratoos.com/api/v1"
 _modelli_sincronizzati_cache = set()
 _cache_gruppi_attributi = {}
 _cache_attributi = {}
+_sync_lock = threading.Lock()
 
 
 def ottieni_access_token():
@@ -223,7 +225,6 @@ def sincronizza_anagrafica_articolo(articolo, token, mappa):
         "Content-Type": "application/json",
     }
 
-    # 1. Recupero Brand e Categoria
     brand_nome = articolo.fornitore.nome if articolo.fornitore else articolo.brand
     brand_id = _gestisci_entita(token, "manufacturers", brand_nome or "Via Roma")
 
@@ -241,7 +242,6 @@ def sincronizza_anagrafica_articolo(articolo, token, mappa):
     product_id = mappa.get(chiave_modello)
 
     try:
-        # 2. Creazione o Aggiornamento Scheda Prodotto
         if product_id:
             requests.put(
                 f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}",
@@ -260,7 +260,6 @@ def sincronizza_anagrafica_articolo(articolo, token, mappa):
                 product_id = res_post.json().get("data", {}).get("id")
                 mappa[chiave_modello] = product_id
 
-        # 3. Assegnazione Corretta Brand e Categorie via Dizionario
         if product_id:
             payload_assoc = {}
             if brand_id:
@@ -276,7 +275,6 @@ def sincronizza_anagrafica_articolo(articolo, token, mappa):
                     timeout=10,
                 )
 
-        # 4. Sincronizzazione Varianti
         if product_id and hasattr(articolo, "varianti") and articolo.varianti:
             sincronizza_varianti_prodotto(articolo, product_id, token)
 
@@ -350,42 +348,53 @@ def sincronizza_varianti_prodotto(articolo, product_id, token):
             logging.error(f"[STRATOOS CHILD SYNC ERROR]: {e}")
 
 
-def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
-    """Aggiorna le quantità su Stratoos con il payload a tre campi obbligatorio."""
-    global _modelli_sincronizzati_cache
-
+def sincronizza_brand_stratoos(nome_brand):
+    """Crea o verifica immediatamente un Brand (Manufacturer) su Stratoos."""
+    if not nome_brand:
+        return None
     token = ottieni_access_token()
     if not token:
-        return False
+        return None
+    return _gestisci_entita(token, "manufacturers", str(nome_brand).strip())
 
-    chiave_modello = str(codice_modello).strip().lower() if codice_modello else ""
 
-    try:
-        if chiave_modello and chiave_modello not in _modelli_sincronizzati_cache:
-            from database.models import VarianteArticolo
+def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
+    """Aggiorna quantità su Stratoos garantendo l'esistenza di Brand, Prodotto e Variante in lock thread-safe."""
+    with _sync_lock:
+        token = ottieni_access_token()
+        if not token:
+            return False
 
-            variante = VarianteArticolo.query.filter_by(
-                barcode=str(barcode).strip()
-            ).first()
-            if variante and variante.articolo:
-                mappa_temp = ottieni_mappa_prodotti_stratoos(token)
-                sincronizza_anagrafica_articolo(variante.articolo, token, mappa_temp)
-                _modelli_sincronizzati_cache.add(chiave_modello)
-    except Exception as e:
-        logging.error(f"[STRATOOS ANAGRAFICA EXCEPTION]: {e}")
+        chiave_modello = str(codice_modello).strip().lower() if codice_modello else ""
+        chiave_barcode = str(barcode).strip()
 
-    headers_auth = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    product_id = None
-    product_child_id = None
-    chiave_barcode = str(barcode).strip()
+        headers_auth = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+        mappa_prod = ottieni_mappa_prodotti_stratoos(token)
+        product_id = mappa_prod.get(chiave_modello) or mappa_prod.get(chiave_barcode)
 
-    mappa_prod = ottieni_mappa_prodotti_stratoos(token)
-    if chiave_modello in mappa_prod:
-        product_id = mappa_prod[chiave_modello]
-    elif chiave_barcode in mappa_prod:
-        product_id = mappa_prod[chiave_barcode]
+        # Se il modello non esiste ancora su Stratoos, sincronizza anagrafica completa
+        if not product_id:
+            try:
+                from database.models import VarianteArticolo
 
-    if product_id:
+                variante = VarianteArticolo.query.filter_by(
+                    barcode=chiave_barcode
+                ).first()
+                if variante and variante.articolo:
+                    product_id = sincronizza_anagrafica_articolo(
+                        variante.articolo, token, mappa_prod
+                    )
+            except Exception as e:
+                logging.error(f"[STRATOOS ANAGRAFICA EXCEPTION]: {e}")
+
+        if not product_id:
+            return False
+
+        # Cerca l'ID della specifica taglia/variante (product_child_id)
+        product_child_id = None
         try:
             res_ch = requests.get(
                 f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}/productChildren",
@@ -404,27 +413,50 @@ def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
         except Exception:
             pass
 
-    if not product_id:
-        return False
+        # Se il modello padre esisteva ma la nuova taglia non c'era, la aggiunge ora
+        if not product_child_id:
+            try:
+                from database.models import VarianteArticolo
 
-    # Struttura esatta richiesta da Stratoos per lo Stock
-    payload = {
-        "product_id": int(product_id),
-        "quantity_available": int(nuova_giacenza),
-        "quantity_physical": int(nuova_giacenza),
-        "quantity_reserved": 0,
-    }
-    if product_child_id:
-        payload["product_child_id"] = int(product_child_id)
+                variante = VarianteArticolo.query.filter_by(
+                    barcode=chiave_barcode
+                ).first()
+                if variante and variante.articolo:
+                    sincronizza_varianti_prodotto(variante.articolo, product_id, token)
+                    res_ch = requests.get(
+                        f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}/productChildren",
+                        headers=headers_auth,
+                        timeout=10,
+                    )
+                    if res_ch.status_code == 200:
+                        for child in res_ch.json().get("data", []):
+                            ref_child = str(child.get("reference", "")).strip().lower()
+                            ean_child = str(child.get("ean13", "")).strip()
+                            if (chiave_barcode and ean_child == chiave_barcode) or (
+                                chiave_barcode and chiave_barcode in ref_child
+                            ):
+                                product_child_id = child.get("id")
+                                break
+            except Exception as e:
+                logging.error(f"[STRATOOS NEW VARIANT EXCEPTION]: {e}")
 
-    try:
-        res_stock = requests.post(
-            f"{BASE_URL}/syncs/{SYNC_ID}/stocks",
-            json=payload,
-            headers={**headers_auth, "Content-Type": "application/json"},
-            timeout=10,
-        )
-        return res_stock.status_code in [200, 201, 204]
-    except Exception as e:
-        logging.error(f"[STRATOOS STOCK EXCEPTION]: {e}")
-        return False
+        payload = {
+            "product_id": int(product_id),
+            "quantity_available": int(nuova_giacenza),
+            "quantity_physical": int(nuova_giacenza),
+            "quantity_reserved": 0,
+        }
+        if product_child_id:
+            payload["product_child_id"] = int(product_child_id)
+
+        try:
+            res_stock = requests.post(
+                f"{BASE_URL}/syncs/{SYNC_ID}/stocks",
+                json=payload,
+                headers={**headers_auth, "Content-Type": "application/json"},
+                timeout=10,
+            )
+            return res_stock.status_code in [200, 201, 204]
+        except Exception as e:
+            logging.error(f"[STRATOOS STOCK EXCEPTION]: {e}")
+            return False

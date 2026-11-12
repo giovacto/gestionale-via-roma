@@ -26,8 +26,8 @@ from database.models import (
     Scadenza,
 )
 
-# Import integrazione Stratoos
-from stratoos import aggiorna_giacenza_stratoos
+# Import integrazione Stratoos (Aggiornata)
+from stratoos import aggiorna_giacenza_stratoos, sincronizza_brand_stratoos
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "chiave-segreta-gestionale-via-roma"
@@ -45,20 +45,31 @@ with app.app_context():
 
 
 def sincronizza_stratoos_async(barcode, codice_modello, nuova_giacenza):
-    """Esegue la chiamata di sincronizzazione giacenza verso Stratoos in un thread separato,
+    """Esegue la sincronizzazione verso Stratoos in background con contesto Flask attivo."""
 
-    rendendo l'interfaccia istantanea e senza attese per l'utente.
-    """
+    def _sync():
+        with app.app_context():
+            try:
+                aggiorna_giacenza_stratoos(
+                    barcode=barcode,
+                    codice_modello=codice_modello,
+                    nuova_giacenza=nuova_giacenza,
+                )
+            except Exception as e:
+                print(f"Errore sync asincrona Stratoos ({barcode}): {e}")
+
+    thread = threading.Thread(target=_sync, daemon=True)
+    thread.start()
+
+
+def sincronizza_brand_async(nome_brand):
+    """Invia immediatamente il nuovo marchio a Stratoos in background."""
 
     def _sync():
         try:
-            aggiorna_giacenza_stratoos(
-                barcode=barcode,
-                codice_modello=codice_modello,
-                nuova_giacenza=nuova_giacenza,
-            )
+            sincronizza_brand_stratoos(nome_brand)
         except Exception as e:
-            print(f"Errore sync asincrona Stratoos ({barcode}): {e}")
+            print(f"Errore sync brand Stratoos ({nome_brand}): {e}")
 
     thread = threading.Thread(target=_sync, daemon=True)
     thread.start()
@@ -70,7 +81,6 @@ def sincronizza_stratoos_async(barcode, codice_modello, nuova_giacenza):
 
 
 def login_required(f):
-
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get("logged_in"):
@@ -105,7 +115,7 @@ def logout():
 
 
 # -------------------------------------------------------------------
-# ROUTE PRINCIPALI
+# ROUTE PRINCIPALI E DASHBOARD
 # -------------------------------------------------------------------
 
 
@@ -174,7 +184,6 @@ def carico():
             flash("⚠️ Codice Modello e Nome Prodotto sono obbligatori!", "danger")
             return redirect("/carico")
 
-        # Cerca se il modello esiste già (ricerca case-insensitive)
         articolo = Articolo.query.filter(
             func.lower(Articolo.codice_modello) == codice_modello.lower()
         ).first()
@@ -229,7 +238,7 @@ def carico():
             conteggio_inseriti += qta
             db.session.commit()
 
-            # Sincronizzazione asincrona su Stratoos
+            # Sincronizzazione asincrona su Stratoos con app_context
             sincronizza_stratoos_async(
                 barcode=var_target.barcode,
                 codice_modello=articolo.codice_modello,
@@ -401,7 +410,7 @@ def API_vendi():
         if variante.giacenza > 0:
             variante.giacenza -= 1
 
-        # Sincronizzazione asincrona immediata
+        # Sincronizzazione asincrona immediata (ora è protetta da app_context)
         sincronizza_stratoos_async(
             barcode=variante.barcode,
             codice_modello=variante.articolo.codice_modello,
@@ -440,7 +449,10 @@ def fornitori():
         db.session.add(nuovo_fornitore)
         db.session.commit()
 
-        flash(f"✅ Fornitore '{nome}' aggiunto con successo!", "success")
+        # Invia subito il brand a Stratoos
+        sincronizza_brand_async(nome)
+
+        flash(f"✅ Fornitore '{nome}' aggiunto e sincronizzato su Stratoos!", "success")
         return redirect(url_for("fornitori"))
 
     lista_fornitori = Fornitore.query.order_by(Fornitore.nome.asc()).all()
@@ -456,6 +468,10 @@ def modifica_fornitore(id):
     fornitore.email = request.form.get("email", "").strip()
 
     db.session.commit()
+
+    # Aggiorna/Verifica il brand su Stratoos
+    sincronizza_brand_async(fornitore.nome)
+
     flash(f"✏️ Fornitore '{fornitore.nome}' aggiornato con successo!", "success")
     return redirect(url_for("fornitori"))
 
@@ -544,32 +560,25 @@ def storna_vendita(vendita_id):
     vendita = Vendita.query.get_or_404(vendita_id)
 
     try:
-        # 1. Reintegro giacenze
         for dett in vendita.dettagli:
             variante = dett.variante
             if variante:
                 variante.giacenza += dett.quantita
-                # Sincronizzazione asincrona senza attendere la risposta HTTP
                 sincronizza_stratoos_async(
                     barcode=variante.barcode,
                     codice_modello=variante.articolo.codice_modello,
                     nuova_giacenza=variante.giacenza,
                 )
-
-            # 2. Eliminazione dettaglio
             db.session.delete(dett)
 
-        # 3. Eliminazione vendita
         db.session.delete(vendita)
         db.session.commit()
-
         flash(
             f"✅ Vendita #{vendita_id} annullata con successo! Giacenza ripristinata e cassa allineata.",
             "success",
         )
     except Exception as e:
         db.session.rollback()
-        print(f"Errore storno vendita #{vendita_id}: {e}")
         flash(f"❌ Errore durante l'annullamento della vendita: {e}", "danger")
 
     return redirect(url_for("tools"))
@@ -597,7 +606,6 @@ def regola_giacenza(variante_id, azione):
 
     db.session.commit()
 
-    # Sincronizzazione asincrona
     sincronizza_stratoos_async(
         barcode=variante.barcode,
         codice_modello=variante.articolo.codice_modello,
@@ -626,7 +634,6 @@ def modifica_variante(variante_id):
 
     db.session.commit()
 
-    # Sincronizzazione asincrona
     sincronizza_stratoos_async(
         barcode=variante.barcode,
         codice_modello=articolo.codice_modello,
@@ -635,6 +642,11 @@ def modifica_variante(variante_id):
 
     flash("✏️ Dettagli articolo modificati con successo!", "success")
     return redirect(url_for("tools"))
+
+
+# -------------------------------------------------------------------
+# SCADENZIARIO (Con storico e rate libere manuali)
+# -------------------------------------------------------------------
 
 
 def calcola_fine_mese(dt_base, mesi_in_avanti):
@@ -662,9 +674,7 @@ def scadenziario():
         else:
             data_rif = datetime.strptime(data_rif_str, "%Y-%m-%d").date()
 
-        # -------------------------------------------------------------
-        # CASO 1: PIANO LIBERO / RATE PERSONALIZZATE DA LOREDANA
-        # -------------------------------------------------------------
+        # CASO 1: PIANO LIBERO / RATE PERSONALIZZATE
         if dilazione == "libero":
             date_rate = request.form.getlist("rate_data[]")
             importi_rate = request.form.getlist("rate_importo[]")
@@ -705,9 +715,7 @@ def scadenziario():
             flash(f"✅ Create con successo {n_rate} rate personalizzate!", "success")
             return redirect(url_for("scadenziario"))
 
-        # -------------------------------------------------------------
-        # CASO 2: PIANI PREDEFINITI (30, 60, 90, FINE MESE, SINGOLA)
-        # -------------------------------------------------------------
+        # CASO 2: PIANI PREDEFINITI
         piani = {
             "singola": [0],
             "30": [30],
