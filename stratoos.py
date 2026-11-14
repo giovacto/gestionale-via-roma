@@ -7,9 +7,10 @@ API_KEY = "pd6ShL8fD3Q9TfbUTcsV0domKu00nkcJ"
 SYNC_ID = 17
 BASE_URL = "https://app.stratoos.com/api/v1"
 
-_modelli_sincronizzati_cache = set()
 _cache_gruppi_attributi = {}
 _cache_attributi = {}
+_cache_stocks = {}
+_stocks_mappati = False
 _sync_lock = threading.Lock()
 
 
@@ -71,6 +72,46 @@ def ottieni_mappa_prodotti_stratoos(token):
             logging.error(f"[STRATOOS GET PRODUCTS EXCEPTION]: {e}")
             break
     return mappa
+
+
+def _ottieni_children_prodotto(product_id, headers_auth):
+    """Legge tutte le varianti figlie direttamente dalla scheda prodotto (senza limiti di pagina)."""
+    try:
+        res = requests.get(
+            f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}",
+            headers=headers_auth,
+            timeout=10,
+        )
+        if res.status_code == 200:
+            data = res.json().get("data", {})
+            if isinstance(data.get("children"), list):
+                return data["children"]
+    except Exception:
+        pass
+
+    # Fallback paginato se children non fosse incluso nella scheda
+    tutti = []
+    page = 1
+    while True:
+        try:
+            res_ch = requests.get(
+                f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}/productChildren?page={page}",
+                headers=headers_auth,
+                timeout=10,
+            )
+            if res_ch.status_code != 200:
+                break
+            js = res_ch.json()
+            dati = js.get("data", [])
+            if not dati:
+                break
+            tutti.extend(dati)
+            if not js.get("links", {}).get("next"):
+                break
+            page += 1
+        except Exception:
+            break
+    return tutti
 
 
 def _gestisci_entita(token, endpoint_name, nome_entita):
@@ -285,31 +326,21 @@ def sincronizza_anagrafica_articolo(articolo, token, mappa):
 
 
 def sincronizza_varianti_prodotto(articolo, product_id, token):
-    """Crea o aggiorna le varianti (productChildren) associate al prodotto padre."""
+    """Crea o aggiorna le varianti (productChildren) associate al prodotto padre senza duplicati."""
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
+    headers_get = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     url_children = f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}/productChildren"
 
     children_esistenti = {}
-    try:
-        res = requests.get(
-            url_children,
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-            timeout=10,
-        )
-        if res.status_code == 200:
-            for ch in res.json().get("data", []):
-                if ch.get("reference"):
-                    children_esistenti[str(ch.get("reference")).strip().lower()] = (
-                        ch.get("id")
-                    )
-                if ch.get("ean13"):
-                    children_esistenti[str(ch.get("ean13")).strip()] = ch.get("id")
-    except Exception:
-        pass
+    for ch in _ottieni_children_prodotto(product_id, headers_get):
+        if ch.get("reference"):
+            children_esistenti[str(ch.get("reference")).strip().lower()] = ch.get("id")
+        if ch.get("ean13"):
+            children_esistenti[str(ch.get("ean13")).strip()] = ch.get("id")
 
     group_taglia_id = _gestisci_gruppo_attributi(token, "Taglia")
 
@@ -343,7 +374,14 @@ def sincronizza_varianti_prodotto(articolo, product_id, token):
             payload_child["ean13"] = str(v.barcode).strip()
 
         try:
-            requests.post(url_children, json=payload_child, headers=headers, timeout=10)
+            res_ch = requests.post(
+                url_children, json=payload_child, headers=headers, timeout=10
+            )
+            if res_ch.status_code in [200, 201]:
+                new_id = res_ch.json().get("data", {}).get("id")
+                children_esistenti[chiave_ref] = new_id
+                if chiave_ean:
+                    children_esistenti[chiave_ean] = new_id
         except Exception as e:
             logging.error(f"[STRATOOS CHILD SYNC ERROR]: {e}")
 
@@ -360,29 +398,47 @@ def sincronizza_brand_stratoos(nome_brand):
 
 def _cerca_child_id(product_id, chiave_barcode, ref_attesa, headers_auth):
     """Cerca l'ID della variante su Stratoos per EAN13 oppure per riferimento MODELLO-TAGLIA."""
-    try:
-        res_ch = requests.get(
-            f"{BASE_URL}/syncs/{SYNC_ID}/products/{product_id}/productChildren",
-            headers=headers_auth,
-            timeout=10,
-        )
-        if res_ch.status_code == 200:
-            for child in res_ch.json().get("data", []):
-                ref_child = str(child.get("reference", "")).strip().lower()
-                ean_child = str(child.get("ean13", "")).strip()
-                if (
-                    (chiave_barcode and ean_child == chiave_barcode)
-                    or (ref_attesa and ref_child == ref_attesa)
-                    or (chiave_barcode and chiave_barcode in ref_child)
-                ):
-                    return child.get("id")
-    except Exception:
-        pass
+    for child in _ottieni_children_prodotto(product_id, headers_auth):
+        ref_child = str(child.get("reference", "")).strip().lower()
+        ean_child = str(child.get("ean13", "")).strip()
+        if (
+            (chiave_barcode and ean_child == chiave_barcode)
+            or (ref_attesa and ref_child == ref_attesa)
+            or (chiave_barcode and chiave_barcode in ref_child)
+        ):
+            return child.get("id")
     return None
+
+
+def _carica_mappa_stocks(headers_auth):
+    """Carica in cache la mappa (product_id, product_child_id) -> stock_id."""
+    global _cache_stocks, _stocks_mappati
+    if _stocks_mappati:
+        return
+    url_stocks = f"{BASE_URL}/syncs/{SYNC_ID}/stocks"
+    page = 1
+    while True:
+        try:
+            res = requests.get(
+                f"{url_stocks}?page={page}", headers=headers_auth, timeout=10
+            )
+            if res.status_code != 200:
+                break
+            js = res.json()
+            for st in js.get("data", []):
+                chiave = (int(st.get("product_id") or 0), int(st.get("product_child_id") or 0))
+                _cache_stocks[chiave] = st.get("id")
+            if not js.get("links", {}).get("next"):
+                break
+            page += 1
+        except Exception:
+            break
+    _stocks_mappati = True
 
 
 def _invia_o_aggiorna_stock(product_id, product_child_id, nuova_giacenza, headers_auth):
     """Invia lo stock tramite POST o lo aggiorna tramite PUT se il record esiste già su Stratoos."""
+    global _cache_stocks, _stocks_mappati
     url_stocks = f"{BASE_URL}/syncs/{SYNC_ID}/stocks"
     headers_json = {**headers_auth, "Content-Type": "application/json"}
 
@@ -395,39 +451,44 @@ def _invia_o_aggiorna_stock(product_id, product_child_id, nuova_giacenza, header
     if product_child_id:
         payload["product_child_id"] = int(product_child_id)
 
+    chiave_stock = (int(product_id), int(product_child_id or 0))
+
     try:
+        _carica_mappa_stocks(headers_auth)
+        stock_id = _cache_stocks.get(chiave_stock)
+
+        if stock_id:
+            res_put = requests.put(
+                f"{url_stocks}/{stock_id}",
+                json=payload,
+                headers=headers_json,
+                timeout=10,
+            )
+            if res_put.status_code in [200, 201, 204]:
+                return True
+
         res_post = requests.post(
             url_stocks, json=payload, headers=headers_json, timeout=10
         )
         if res_post.status_code in [200, 201, 204]:
+            new_st_id = res_post.json().get("data", {}).get("id")
+            if new_st_id:
+                _cache_stocks[chiave_stock] = new_st_id
             return True
 
-        # Se esiste già un record stock per questa variante, recupera il suo ID e aggiorna via PUT
-        page = 1
-        while True:
-            res_get = requests.get(
-                f"{url_stocks}?page={page}", headers=headers_auth, timeout=10
+        # Se la cache non era allineata, forza un refresh della mappa e riprova PUT
+        _stocks_mappati = False
+        _cache_stocks.clear()
+        _carica_mappa_stocks(headers_auth)
+        stock_id = _cache_stocks.get(chiave_stock)
+        if stock_id:
+            res_put = requests.put(
+                f"{url_stocks}/{stock_id}",
+                json=payload,
+                headers=headers_json,
+                timeout=10,
             )
-            if res_get.status_code != 200:
-                break
-            data_json = res_get.json()
-            for st in data_json.get("data", []):
-                st_prod = st.get("product_id")
-                st_child = st.get("product_child_id")
-                if int(st_prod or 0) == int(product_id) and int(st_child or 0) == int(
-                    product_child_id or 0
-                ):
-                    stock_id = st.get("id")
-                    res_put = requests.put(
-                        f"{url_stocks}/{stock_id}",
-                        json=payload,
-                        headers=headers_json,
-                        timeout=10,
-                    )
-                    return res_put.status_code in [200, 201, 204]
-            if not data_json.get("links", {}).get("next"):
-                break
-            page += 1
+            return res_put.status_code in [200, 201, 204]
 
         print(
             f"⚠️ Errore stock Stratoos (HTTP {res_post.status_code}): {res_post.text[:150]}"
@@ -448,7 +509,6 @@ def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
         chiave_modello = str(codice_modello).strip().lower() if codice_modello else ""
         chiave_barcode = str(barcode).strip()
 
-        # Recupera la variante dal DB locale per conoscere il riferimento MODELLO-TAGLIA esatto
         variante = None
         ref_attesa = ""
         try:
@@ -474,7 +534,6 @@ def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
         mappa_prod = ottieni_mappa_prodotti_stratoos(token)
         product_id = mappa_prod.get(chiave_modello) or mappa_prod.get(chiave_barcode)
 
-        # Se il modello non esiste ancora su Stratoos, sincronizza anagrafica completa
         if not product_id and variante and variante.articolo:
             product_id = sincronizza_anagrafica_articolo(
                 variante.articolo, token, mappa_prod
@@ -483,12 +542,10 @@ def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
         if not product_id:
             return False
 
-        # Cerca l'ID della specifica taglia/variante (product_child_id)
         product_child_id = _cerca_child_id(
             product_id, chiave_barcode, ref_attesa, headers_auth
         )
 
-        # Se il modello padre esisteva ma questa taglia mancava, la crea e la rilegge
         if not product_child_id and variante and variante.articolo:
             sincronizza_varianti_prodotto(variante.articolo, product_id, token)
             product_child_id = _cerca_child_id(
