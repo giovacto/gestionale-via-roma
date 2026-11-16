@@ -1,4 +1,5 @@
 import logging
+import re
 import requests
 import threading
 
@@ -89,7 +90,6 @@ def _ottieni_children_prodotto(product_id, headers_auth):
     except Exception:
         pass
 
-    # Fallback paginato se children non fosse incluso nella scheda
     tutti = []
     page = 1
     while True:
@@ -112,6 +112,37 @@ def _ottieni_children_prodotto(product_id, headers_auth):
         except Exception:
             break
     return tutti
+
+
+def _modello_ha_piu_colori(articolo):
+    """Restituisce True se l'articolo ha varianti con colori diversi."""
+    if not articolo or not getattr(articolo, "varianti", None):
+        return False
+    colori = {
+        str(getattr(v, "colore", None) or getattr(articolo, "colore", None) or "")
+        .strip()
+        .lower()
+        for v in articolo.varianti
+        if str(
+            getattr(v, "colore", None) or getattr(articolo, "colore", None) or ""
+        ).strip()
+    }
+    return len(colori) > 1
+
+
+def _costruisci_ref_variante(articolo, variante, usa_colore):
+    """Costruisce il riferimento univoco MODELLO-TAGLIA oppure MODELLO-COLORE-TAGLIA."""
+    taglia = (
+        getattr(variante, "taglia_numero", None)
+        or getattr(variante, "taglia", None)
+        or "TU"
+    )
+    colore = str(
+        getattr(variante, "colore", None) or getattr(articolo, "colore", None) or ""
+    ).strip()
+    if usa_colore and colore:
+        return f"{articolo.codice_modello}-{colore}-{taglia}"[:40]
+    return f"{articolo.codice_modello}-{taglia}"[:40]
 
 
 def _gestisci_entita(token, endpoint_name, nome_entita):
@@ -237,10 +268,11 @@ def _gestisci_attributo(token, group_id, valore_attributo):
         pass
 
     try:
+        val_pulito = re.sub(
+            r"[^A-Z0-9_]", "", str(valore_attributo).strip().upper().replace(" ", "_")
+        )
         payload = {
-            "reference": f"ATTR_{group_id}_{valore_attributo}".strip()
-            .upper()
-            .replace(" ", "_"),
+            "reference": f"ATTR_{group_id}_{val_pulito}",
             "langs": [{"lang_id": 1, "name": str(valore_attributo)}],
         }
         res_post = requests.post(
@@ -342,16 +374,23 @@ def sincronizza_varianti_prodotto(articolo, product_id, token):
         if ch.get("ean13"):
             children_esistenti[str(ch.get("ean13")).strip()] = ch.get("id")
 
+    usa_colore = _modello_ha_piu_colori(articolo)
     group_taglia_id = _gestisci_gruppo_attributi(token, "Taglia")
+    group_colore_id = (
+        _gestisci_gruppo_attributi(token, "Colore") if usa_colore else None
+    )
 
     for v in articolo.varianti:
         taglia = getattr(v, "taglia_numero", None) or getattr(v, "taglia", None) or "TU"
-        ref_variante = f"{articolo.codice_modello}-{taglia}"[:40]
+        colore = str(
+            getattr(v, "colore", None) or getattr(articolo, "colore", None) or ""
+        ).strip()
+        ref_variante = _costruisci_ref_variante(articolo, v, usa_colore)
         chiave_ref = ref_variante.strip().lower()
         chiave_ean = str(v.barcode).strip() if v.barcode else ""
 
-        if chiave_ref in children_esistenti or (
-            chiave_ean and chiave_ean in children_esistenti
+        if (chiave_ean and chiave_ean in children_esistenti) or (
+            chiave_ref in children_esistenti
         ):
             continue
 
@@ -360,6 +399,10 @@ def sincronizza_varianti_prodotto(articolo, product_id, token):
             attr_id = _gestisci_attributo(token, group_taglia_id, str(taglia))
             if attr_id:
                 options.append({"id": attr_id})
+        if usa_colore and colore and group_colore_id:
+            attr_col_id = _gestisci_attributo(token, group_colore_id, colore)
+            if attr_col_id:
+                options.append({"id": attr_col_id})
 
         payload_child = {
             "price": float(articolo.prezzo_listino or 0.0),
@@ -397,14 +440,16 @@ def sincronizza_brand_stratoos(nome_brand):
 
 
 def _cerca_child_id(product_id, chiave_barcode, ref_attesa, headers_auth):
-    """Cerca l'ID della variante su Stratoos per EAN13 oppure per riferimento MODELLO-TAGLIA."""
-    for child in _ottieni_children_prodotto(product_id, headers_auth):
+    """Cerca l'ID della variante su Stratoos per EAN13 oppure per riferimento univoco."""
+    children = _ottieni_children_prodotto(product_id, headers_auth)
+    if chiave_barcode:
+        for child in children:
+            if str(child.get("ean13", "")).strip() == chiave_barcode:
+                return child.get("id")
+    for child in children:
         ref_child = str(child.get("reference", "")).strip().lower()
-        ean_child = str(child.get("ean13", "")).strip()
-        if (
-            (chiave_barcode and ean_child == chiave_barcode)
-            or (ref_attesa and ref_child == ref_attesa)
-            or (chiave_barcode and chiave_barcode in ref_child)
+        if (ref_attesa and ref_child == ref_attesa) or (
+            chiave_barcode and chiave_barcode in ref_child
         ):
             return child.get("id")
     return None
@@ -426,7 +471,10 @@ def _carica_mappa_stocks(headers_auth):
                 break
             js = res.json()
             for st in js.get("data", []):
-                chiave = (int(st.get("product_id") or 0), int(st.get("product_child_id") or 0))
+                chiave = (
+                    int(st.get("product_id") or 0),
+                    int(st.get("product_child_id") or 0),
+                )
                 _cache_stocks[chiave] = st.get("id")
             if not js.get("links", {}).get("next"):
                 break
@@ -476,7 +524,6 @@ def _invia_o_aggiorna_stock(product_id, product_child_id, nuova_giacenza, header
                 _cache_stocks[chiave_stock] = new_st_id
             return True
 
-        # Se la cache non era allineata, forza un refresh della mappa e riprova PUT
         _stocks_mappati = False
         _cache_stocks.clear()
         _carica_mappa_stocks(headers_auth)
@@ -516,13 +563,11 @@ def aggiorna_giacenza_stratoos(barcode, codice_modello, nuova_giacenza):
 
             variante = VarianteArticolo.query.filter_by(barcode=chiave_barcode).first()
             if variante and variante.articolo:
-                taglia = (
-                    getattr(variante, "taglia_numero", None)
-                    or getattr(variante, "taglia", None)
-                    or "TU"
-                )
+                usa_colore = _modello_ha_piu_colori(variante.articolo)
                 ref_attesa = (
-                    f"{variante.articolo.codice_modello}-{taglia}"[:40].strip().lower()
+                    _costruisci_ref_variante(variante.articolo, variante, usa_colore)
+                    .strip()
+                    .lower()
                 )
         except Exception:
             pass
