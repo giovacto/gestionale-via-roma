@@ -174,7 +174,7 @@ def cassa():
 def carico():
     if request.method == "POST":
         codice_modello = request.form.get("codice_modello", "").strip()
-        codice_modello = re.sub(r"\s*\[.*?\]\s*$", "", codice_modello).strip()
+        codice = re.sub(r"(\s*\[[^\]]*\])+\s*$", "", codice).strip()
         nome = request.form.get("nome", "").strip()
         fornitore_id = request.form.get("fornitore_id")
         tipologia = request.form.get("tipologia", "").strip()
@@ -268,6 +268,7 @@ def check_modello(codice=None):
         codice = request.args.get("q", "").strip()
     else:
         codice = codice.strip()
+        codice = re.sub(r"(\s*\[[^\]]*\])+\s*$", "", codice).strip()
 
     if not codice:
         return jsonify({"esiste": False})
