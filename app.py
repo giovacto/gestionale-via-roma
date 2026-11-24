@@ -1,4 +1,5 @@
 import os
+import re
 import random
 import threading
 import calendar
@@ -173,6 +174,7 @@ def cassa():
 def carico():
     if request.method == "POST":
         codice_modello = request.form.get("codice_modello", "").strip()
+        codice_modello = re.sub(r"\s*\[.*?\]\s*$", "", codice_modello).strip()
         nome = request.form.get("nome", "").strip()
         fornitore_id = request.form.get("fornitore_id")
         tipologia = request.form.get("tipologia", "").strip()
