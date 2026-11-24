@@ -1,4 +1,5 @@
 import os
+import random
 import threading
 import calendar
 from datetime import datetime, date, timedelta
@@ -641,6 +642,95 @@ def modifica_variante(variante_id):
     )
 
     flash("✏️ Dettagli articolo modificati con successo!", "success")
+    return redirect(url_for("tools"))
+
+
+@app.route("/tools/aggiungi-variante/<int:variante_id>", methods=["POST"])
+@login_required
+def aggiungi_variante_da_tools(variante_id):
+    variante_rif = VarianteArticolo.query.get_or_404(variante_id)
+    articolo = variante_rif.articolo
+
+    colore = request.form.get("colore", "").strip() or variante_rif.colore or "Nero"
+    taglia_numero = request.form.get("taglia_numero", "").strip() or "TU"
+    barcode = request.form.get("barcode", "").strip()
+    qta = int(request.form.get("quantita") or 1)
+
+    if qta < 1:
+        flash("⚠️ La quantità da aggiungere deve essere almeno 1 paio.", "danger")
+        return redirect(url_for("tools"))
+
+    # 1. Controllo se il barcode esiste già nel database
+    if barcode:
+        var_by_bc = VarianteArticolo.query.filter_by(barcode=barcode).first()
+        if var_by_bc:
+            if var_by_bc.articolo_id == articolo.id:
+                var_by_bc.giacenza += qta
+                db.session.commit()
+                sincronizza_stratoos_async(
+                    barcode=var_by_bc.barcode,
+                    codice_modello=articolo.codice_modello,
+                    nuova_giacenza=var_by_bc.giacenza,
+                )
+                flash(
+                    f"➕ Riassortimento registrato: +{qta} pz su {articolo.nome} (Tg. {var_by_bc.taglia_numero})! Nuova giacenza: {var_by_bc.giacenza} pz.",
+                    "success",
+                )
+                return redirect(url_for("tools"))
+            else:
+                flash(
+                    f"⚠️ Attenzione: il barcode {barcode} appartiene già a un altro articolo ({var_by_bc.articolo.codice_modello} - {var_by_bc.articolo.nome})!",
+                    "danger",
+                )
+                return redirect(url_for("tools"))
+
+    # 2. Controllo se esiste già la stessa combinazione Colore + Taglia su questo modello
+    var_stessa_taglia = VarianteArticolo.query.filter(
+        VarianteArticolo.articolo_id == articolo.id,
+        func.lower(VarianteArticolo.colore) == colore.lower(),
+        func.lower(VarianteArticolo.taglia_numero) == taglia_numero.lower(),
+    ).first()
+
+    if var_stessa_taglia:
+        var_stessa_taglia.giacenza += qta
+        if barcode and not var_stessa_taglia.barcode:
+            var_stessa_taglia.barcode = barcode
+        db.session.commit()
+        sincronizza_stratoos_async(
+            barcode=var_stessa_taglia.barcode,
+            codice_modello=articolo.codice_modello,
+            nuova_giacenza=var_stessa_taglia.giacenza,
+        )
+        flash(
+            f"➕ Taglia {var_stessa_taglia.taglia_numero} ({var_stessa_taglia.colore}) già presente: aggiunti +{qta} pz! Nuova giacenza: {var_stessa_taglia.giacenza} pz.",
+            "success",
+        )
+        return redirect(url_for("tools"))
+
+    # 3. Altrimenti crea la nuova taglia collegata allo stesso codice modello
+    if not barcode:
+        barcode = f"VR{datetime.now().strftime('%y%m%d%H%M%S')}{random.randint(10, 99)}"
+
+    nuova_var = VarianteArticolo(
+        articolo_id=articolo.id,
+        barcode=barcode,
+        colore=colore,
+        taglia_numero=taglia_numero,
+        giacenza=qta,
+    )
+    db.session.add(nuova_var)
+    db.session.commit()
+
+    sincronizza_stratoos_async(
+        barcode=nuova_var.barcode,
+        codice_modello=articolo.codice_modello,
+        nuova_giacenza=nuova_var.giacenza,
+    )
+
+    flash(
+        f"✅ Aggiunta nuova taglia {taglia_numero} ({colore}) a {articolo.codice_modello} ({qta} pz) e sincronizzata su Stratoos!",
+        "success",
+    )
     return redirect(url_for("tools"))
 
 

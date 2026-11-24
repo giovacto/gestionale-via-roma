@@ -178,7 +178,18 @@
 
                             <td class="text-end">
                                 <button type="button" class="btn btn-warning btn-sm fw-bold me-1 text-white"
-                                    onclick="apriModalModifica('{{ variante.id }}', '{{ variante.articolo.nome }}', '{{ variante.articolo.fornitore_id }}', '{{ variante.articolo.tipologia }}', '{{ variante.articolo.prezzo_acquisto }}', '{{ variante.articolo.prezzo_listino }}', '{{ variante.colore }}', '{{ variante.taglia_numero }}', '{{ variante.barcode }}', '{{ variante.giacenza }}')">
+                                    data-id="{{ variante.id }}" data-codice="{{ variante.articolo.codice_modello }}"
+                                    data-nome="{{ variante.articolo.nome }}"
+                                    data-fornitore="{{ variante.articolo.fornitore_id or '' }}"
+                                    data-tipologia="{{ variante.articolo.tipologia or '' }}"
+                                    data-acq="{{ variante.articolo.prezzo_acquisto or 0 }}"
+                                    data-lis="{{ variante.articolo.prezzo_listino or 0 }}"
+                                    data-colore="{{ variante.colore or '' }}"
+                                    data-taglia="{{ variante.taglia_numero or '' }}"
+                                    data-barcode="{{ variante.barcode or '' }}"
+                                    data-giacenza="{{ variante.giacenza or 0 }}"
+                                    data-taglie-presenti="{% for v_s in variante.articolo.varianti %}{{ v_s.taglia_numero }} ({{ v_s.giacenza }} pz){% if not loop.last %}, {% endif %}{% endfor %}"
+                                    onclick="apriModalModifica(this)">
                                     ✏️ Modifica
                                 </button>
                                 <form action="/tools/regola/{{ variante.id }}/elimina" method="POST"
@@ -200,78 +211,155 @@
         </div>
     </div>
 
-    <!-- MODAL DI MODIFICA ARTICOLO -->
+    <!-- MODAL DI MODIFICA ARTICOLO E RIASSORTIMENTO TAGLIE -->
     <div class="modal fade" id="modalModifica" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
-                <form id="formModifica" method="POST">
-                    <div class="modal-header bg-warning text-white">
-                        <h5 class="modal-title fw-bold">✏️ Modifica Dettagli Articolo</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                            aria-label="Close"></button>
+                <div class="modal-header bg-warning text-white">
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0">✏️ Gestione Articolo e Riassortimento</h5>
+                        <small class="font-monospace">Codice Modello: <strong id="mod_header_codice"></strong></small>
                     </div>
-                    <div class="modal-body">
-                        <div class="row g-3">
-                            <div class="col-12 col-md-6">
-                                <label class="form-label fw-bold">Nome Prodotto</label>
-                                <input type="text" name="nome" id="mod_nome" class="form-control" required>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+                    <!-- SCHEDE MODIFICA / AGGIUNGI TAGLIA -->
+                    <ul class="nav nav-pills nav-fill mb-3 p-1 bg-light rounded-3 border" id="modalTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active fw-bold" id="tab-modifica-btn" data-bs-toggle="pill"
+                                data-bs-target="#pane-modifica" type="button" role="tab">
+                                ✏️ Modifica questa taglia (<span id="tab_label_taglia"></span>)
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link fw-bold text-success" id="tab-aggiungi-btn" data-bs-toggle="pill"
+                                data-bs-target="#pane-aggiungi" type="button" role="tab">
+                                ➕ Aggiungi Taglia / Riassortimento
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content">
+                        <!-- PANE 1: MODIFICA RIGA ESISTENTE -->
+                        <div class="tab-pane fade show active" id="pane-modifica" role="tabpanel">
+                            <form id="formModifica" method="POST">
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label fw-bold">Nome Prodotto</label>
+                                        <input type="text" name="nome" id="mod_nome" class="form-control" required>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label fw-bold">Fornitore</label>
+                                        <select name="fornitore_id" id="mod_fornitore_id" class="form-select" required>
+                                            {% for f in fornitori %}
+                                            <option value="{{ f.id }}">{{ f.nome }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label fw-bold">Tipologia</label>
+                                        <select name="tipologia" id="mod_tipologia" class="form-select" required>
+                                            <option value="Scarpe Donna">Scarpe Donna</option>
+                                            <option value="Scarpe Uomo">Scarpe Uomo</option>
+                                            <option value="Scarpe Bambino">Scarpe Bambino</option>
+                                            <option value="Borse">Borse</option>
+                                            <option value="Cinture">Cinture</option>
+                                            <option value="Foulard">Foulard</option>
+                                            <option value="Portafogli">Portafogli</option>
+                                            <option value="Accessori">Accessori</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label fw-bold">Prezzo Acquisto (€)</label>
+                                        <input type="number" step="0.01" name="prezzo_acquisto" id="mod_prezzo_acquisto"
+                                            class="form-control" required>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label fw-bold">Prezzo Listino (€)</label>
+                                        <input type="number" step="0.01" name="prezzo_listino" id="mod_prezzo_listino"
+                                            class="form-control fw-bold border-success" required>
+                                    </div>
+                                    <hr class="my-3">
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label fw-bold">Colore</label>
+                                        <input type="text" name="colore" id="mod_colore" class="form-control" required>
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label fw-bold">Numero/Taglia</label>
+                                        <input type="text" name="taglia_numero" id="mod_taglia_numero"
+                                            class="form-control" required>
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label fw-bold">Barcode</label>
+                                        <input type="text" name="barcode" id="mod_barcode" class="form-control"
+                                            required>
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label fw-bold">Giacenza (pz)</label>
+                                        <input type="number" name="giacenza" id="mod_giacenza" class="form-control"
+                                            required>
+                                    </div>
+                                </div>
+                                <div class="mt-4 d-flex justify-content-end gap-2">
+                                    <button type="button" class="btn btn-secondary"
+                                        data-bs-dismiss="modal">Annulla</button>
+                                    <button type="submit" class="btn btn-warning text-white fw-bold">💾 Salva
+                                        Modifiche</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- PANE 2: AGGIUNGI TAGLIA / RIASSORTIMENTO -->
+                        <div class="tab-pane fade" id="pane-aggiungi" role="tabpanel">
+                            <div class="alert alert-success border-success-subtle mb-3">
+                                <div class="fw-bold mb-1">
+                                    🔒 Modello collegato in automatico: <span class="font-monospace"
+                                        id="add_codice_display"></span> — <span id="add_nome_display"></span>
+                                </div>
+                                <div class="small text-dark">
+                                    <strong>Taglie già in magazzino:</strong> <span id="add_taglie_presenti"
+                                        class="font-monospace"></span>
+                                </div>
                             </div>
-                            <div class="col-12 col-md-6">
-                                <label class="form-label fw-bold">Fornitore</label>
-                                <select name="fornitore_id" id="mod_fornitore_id" class="form-select" required>
-                                    {% for f in fornitori %}
-                                    <option value="{{ f.id }}">{{ f.nome }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-12 col-md-4">
-                                <label class="form-label fw-bold">Tipologia</label>
-                                <select name="tipologia" id="mod_tipologia" class="form-select" required>
-                                    <option value="Scarpe Donna">Scarpe Donna</option>
-                                    <option value="Scarpe Uomo">Scarpe Uomo</option>
-                                    <option value="Scarpe Bambino">Scarpe Bambino</option>
-                                    <option value="Borse">Borse</option>
-                                    <option value="Cinture">Cinture</option>
-                                    <option value="Foulard">Foulard</option>
-                                    <option value="Portafogli">Portafogli</option>
-                                    <option value="Accessori">Accessori</option>
-                                </select>
-                            </div>
-                            <div class="col-12 col-md-4">
-                                <label class="form-label fw-bold">Prezzo Acquisto (€)</label>
-                                <input type="number" step="0.01" name="prezzo_acquisto" id="mod_prezzo_acquisto"
-                                    class="form-control" required>
-                            </div>
-                            <div class="col-12 col-md-4">
-                                <label class="form-label fw-bold">Prezzo Listino (€)</label>
-                                <input type="number" step="0.01" name="prezzo_listino" id="mod_prezzo_listino"
-                                    class="form-control fw-bold border-success" required>
-                            </div>
-                            <hr class="my-3">
-                            <div class="col-12 col-md-3">
-                                <label class="form-label fw-bold">Colore</label>
-                                <input type="text" name="colore" id="mod_colore" class="form-control" required>
-                            </div>
-                            <div class="col-12 col-md-3">
-                                <label class="form-label fw-bold">Numero/Taglia</label>
-                                <input type="text" name="taglia_numero" id="mod_taglia_numero" class="form-control"
-                                    required>
-                            </div>
-                            <div class="col-12 col-md-3">
-                                <label class="form-label fw-bold">Barcode</label>
-                                <input type="text" name="barcode" id="mod_barcode" class="form-control" required>
-                            </div>
-                            <div class="col-12 col-md-3">
-                                <label class="form-label fw-bold">Giacenza (pz)</label>
-                                <input type="number" name="giacenza" id="mod_giacenza" class="form-control" required>
-                            </div>
+
+                            <form id="formAggiungiVariante" method="POST">
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label fw-bold">Colore</label>
+                                        <input type="text" name="colore" id="add_colore" class="form-control" required>
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label fw-bold">Numero / Taglia</label>
+                                        <input type="text" name="taglia_numero" id="add_taglia_numero"
+                                            class="form-control fw-bold border-success" placeholder="es. 40" required>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label fw-bold">Barcode (spara o lascia vuoto)</label>
+                                        <input type="text" name="barcode" id="add_barcode"
+                                            class="form-control font-monospace" placeholder="EAN-13 o vuoto = auto">
+                                    </div>
+                                    <div class="col-12 col-md-2">
+                                        <label class="form-label fw-bold">Paia (+)</label>
+                                        <input type="number" name="quantita" id="add_quantita"
+                                            class="form-control fw-bold text-center" value="1" min="1" required>
+                                    </div>
+                                </div>
+                                <small class="text-muted d-block mt-2">
+                                    💡 Se inserisci una taglia o un barcode già presente per questo articolo, le paia
+                                    verranno sommate automaticamente alla giacenza esistente.
+                                </small>
+                                <div class="mt-4 d-flex justify-content-end gap-2">
+                                    <button type="button" class="btn btn-secondary"
+                                        data-bs-dismiss="modal">Annulla</button>
+                                    <button type="submit" class="btn btn-success fw-bold">➕ Aggiungi al
+                                        Magazzino</button>
+                                </div>
+                            </form>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-                        <button type="submit" class="btn btn-warning text-white fw-bold">💾 Salva Modifiche</button>
-                    </div>
-                </form>
+                </div>
             </div>
         </div>
     </div>
@@ -296,8 +384,24 @@
             }
         }
 
-        function apriModalModifica(id, nome, fornitore_id, tipologia, prezzo_acq, prezzo_lis, colore, taglia, barcode, giacenza) {
+        function apriModalModifica(btn) {
+            let id = btn.dataset.id;
+            let codice = btn.dataset.codice;
+            let nome = btn.dataset.nome;
+            let fornitore_id = btn.dataset.fornitore;
+            let tipologia = btn.dataset.tipologia;
+            let prezzo_acq = btn.dataset.acq;
+            let prezzo_lis = btn.dataset.lis;
+            let colore = btn.dataset.colore;
+            let taglia = btn.dataset.taglia;
+            let barcode = btn.dataset.barcode;
+            let giacenza = btn.dataset.giacenza;
+            let tagliePresenti = btn.dataset.tagliePresenti;
+
+            // Popola form Modifica
             document.getElementById('formModifica').action = '/tools/modifica/' + id;
+            document.getElementById('mod_header_codice').textContent = codice;
+            document.getElementById('tab_label_taglia').textContent = 'Tg. ' + taglia;
             document.getElementById('mod_nome').value = nome;
             document.getElementById('mod_fornitore_id').value = fornitore_id;
             document.getElementById('mod_tipologia').value = tipologia;
@@ -307,6 +411,20 @@
             document.getElementById('mod_taglia_numero').value = taglia;
             document.getElementById('mod_barcode').value = barcode;
             document.getElementById('mod_giacenza').value = giacenza;
+
+            // Popola form Aggiungi Taglia / Riassortimento
+            document.getElementById('formAggiungiVariante').action = '/tools/aggiungi-variante/' + id;
+            document.getElementById('add_codice_display').textContent = codice;
+            document.getElementById('add_nome_display').textContent = nome;
+            document.getElementById('add_taglie_presenti').textContent = tagliePresenti || '-';
+            document.getElementById('add_colore').value = colore;
+            document.getElementById('add_taglia_numero').value = '';
+            document.getElementById('add_barcode').value = '';
+            document.getElementById('add_quantita').value = 1;
+
+            // Riporta sempre sulla prima scheda all'apertura
+            let firstTab = new bootstrap.Tab(document.getElementById('tab-modifica-btn'));
+            firstTab.show();
 
             let modal = new bootstrap.Modal(document.getElementById('modalModifica'));
             modal.show();
