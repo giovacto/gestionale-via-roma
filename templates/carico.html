@@ -289,7 +289,12 @@
 
         function verificaCodiceModello() {
             let inputCodice = document.getElementById('codice_modello');
-            let codice = inputCodice.value.trim();
+            // Rimuove eventuali parentesi quadre finali (es. [NeroGiardini]) direttamente nella casella
+            let codice = inputCodice.value.replace(/(\s*\[[^\]]*\])+\s*$/g, '').trim();
+            if (codice !== inputCodice.value) {
+                inputCodice.value = codice;
+            }
+
             let alertBox = document.getElementById('alert_esistente');
             let tbody = document.getElementById('tabella_giacenze_esistenti');
 
@@ -309,12 +314,12 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.esiste) {
-                        inputNome.value = data.nome;
-                        inputFornitore.value = data.fornitore_id;
-                        inputTipologia.value = data.tipologia;
-                        inputAcquisto.value = data.prezzo_acquisto;
-                        inputRicarico.value = data.ricarico_percentuale;
-                        inputListino.value = data.prezzo_listino.toFixed(2);
+                        inputNome.value = data.nome || '';
+                        inputFornitore.value = data.fornitore_id || '';
+                        inputTipologia.value = data.tipologia || 'Scarpe Donna';
+                        inputAcquisto.value = data.prezzo_acquisto ?? 0;
+                        inputRicarico.value = data.ricarico_percentuale ?? 0;
+                        inputListino.value = (Number(data.prezzo_listino) || 0).toFixed(2);
 
                         // Faccio aggiornare l'interfaccia nel caso il db mi dica che è un accessorio
                         gestisciCampiTaglia();
@@ -377,9 +382,11 @@
             gestisciCampiTaglia();
         }
 
-        // Eventi per far scattare la verifica sia quando si perde il focus sia premendo Invio
-        document.getElementById('codice_modello').addEventListener('blur', verificaCodiceModello);
-        document.getElementById('codice_modello').addEventListener('keypress', function (e) {
+        // Eventi per far scattare la verifica quando si esce dal campo, si modifica o si preme Invio
+        const campoCodiceModello = document.getElementById('codice_modello');
+        campoCodiceModello.addEventListener('blur', verificaCodiceModello);
+        campoCodiceModello.addEventListener('change', verificaCodiceModello);
+        campoCodiceModello.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 verificaCodiceModello();
