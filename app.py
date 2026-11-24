@@ -623,7 +623,8 @@ def modifica_variante(variante_id):
     articolo = variante.articolo
 
     articolo.nome = request.form.get("nome", "").strip()
-    articolo.fornitore_id = request.form.get("fornitore_id")
+    fid = request.form.get("fornitore_id")
+    articolo.fornitore_id = int(fid) if fid else None
     articolo.tipologia = request.form.get("tipologia", "").strip()
     articolo.prezzo_acquisto = float(request.form.get("prezzo_acquisto") or 0)
     articolo.prezzo_listino = float(request.form.get("prezzo_listino") or 0)
